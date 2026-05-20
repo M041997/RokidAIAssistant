@@ -136,6 +136,9 @@ class GlassesViewModel(
 
     // Live translation should match the user's central field of view, not the full wide camera frame.
     private val visualTranslationFrameZoom = 2.0f
+
+    // Rokid camera frames arrive in sensor orientation, which is sideways relative to the wearer view.
+    private val visualTranslationFrameRotationDegrees = 90
     
     init {
         initializeBluetooth()
@@ -998,7 +1001,8 @@ class GlassesViewModel(
                                 targetHeight = 480,
                                 quality = videoFrameQuality,
                                 centerCropToTargetAspect = shouldZoomFrame,
-                                zoomFactor = if (shouldZoomFrame) visualTranslationFrameZoom else 1.0f
+                                zoomFactor = if (shouldZoomFrame) visualTranslationFrameZoom else 1.0f,
+                                rotationDegrees = if (shouldZoomFrame) visualTranslationFrameRotationDegrees else 0
                             )
                         }
                         

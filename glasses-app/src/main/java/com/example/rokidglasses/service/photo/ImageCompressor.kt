@@ -42,7 +42,8 @@ object ImageCompressor {
         quality: Int = PhotoTransferConstants.JPEG_QUALITY,
         maxSize: Int = PhotoTransferConstants.MAX_COMPRESSED_SIZE,
         centerCropToTargetAspect: Boolean = false,
-        zoomFactor: Float = 1.0f
+        zoomFactor: Float = 1.0f,
+        rotationDegrees: Int = 0
     ): ByteArray = withContext(Dispatchers.Default) {
         
         Log.d(TAG, "Compressing image: input=${imageData.size} bytes")
@@ -68,15 +69,21 @@ object ImageCompressor {
         // Decode with sample size
         val sampledBitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size, options)
             ?: throw IllegalArgumentException("Failed to decode image")
+
+        val orientedBitmap = if (rotationDegrees != 0) {
+            rotateBitmap(sampledBitmap, rotationDegrees)
+        } else {
+            sampledBitmap
+        }
         
         val preparedBitmap = if (centerCropToTargetAspect || zoomFactor > 1.0f) {
             centerCropBitmap(
-                sampledBitmap,
+                orientedBitmap,
                 targetAspectRatio = targetWidth.toFloat() / targetHeight.toFloat(),
                 zoomFactor = zoomFactor
             )
         } else {
-            sampledBitmap
+            orientedBitmap
         }
 
         // Scale to exact target size while maintaining aspect ratio
@@ -86,8 +93,11 @@ object ImageCompressor {
             scaleBitmap(preparedBitmap, targetWidth, targetHeight)
         }
         
-        if (sampledBitmap != preparedBitmap) {
+        if (sampledBitmap != orientedBitmap) {
             sampledBitmap.recycle()
+        }
+        if (orientedBitmap != preparedBitmap) {
+            orientedBitmap.recycle()
         }
         if (preparedBitmap != scaledBitmap) {
             preparedBitmap.recycle()
@@ -182,6 +192,15 @@ object ImageCompressor {
         val newHeight = (height * scale).toInt()
         
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
+    private fun rotateBitmap(bitmap: Bitmap, rotationDegrees: Int): Bitmap {
+        val normalizedDegrees = ((rotationDegrees % 360) + 360) % 360
+        if (normalizedDegrees == 0) return bitmap
+
+        val matrix = Matrix().apply { postRotate(normalizedDegrees.toFloat()) }
+        Log.d(TAG, "Rotating bitmap ${bitmap.width}x${bitmap.height} by ${normalizedDegrees} degrees")
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
     /**
