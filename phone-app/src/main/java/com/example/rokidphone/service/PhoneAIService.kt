@@ -916,6 +916,7 @@ class PhoneAIService : Service() {
         serviceScope.launch {
             try {
                 Log.d(TAG, "Analyzing visual translation frame: ${frameData.size} bytes")
+                saveLatestVisualTranslationFrame(frameData)
                 updatePipeline(
                     title = "Frame received",
                     detail = "Sending camera frame to Gemini for translation",
@@ -968,6 +969,15 @@ class PhoneAIService : Service() {
             } finally {
                 isVisualTranslationFrameInFlight = false
             }
+        }
+    }
+
+    private fun saveLatestVisualTranslationFrame(frameData: ByteArray) {
+        try {
+            val frameDir = java.io.File(filesDir, "live_visual_frames").apply { mkdirs() }
+            java.io.File(frameDir, "latest.jpg").writeBytes(frameData)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save latest visual translation frame", e)
         }
     }
 
