@@ -149,7 +149,6 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun startScanning() {
         viewModelScope.launch {
-            _uiState.update { it.copy(connectionState = ConnectionState.CONNECTING) }
             ServiceBridge.requestStartListening()
         }
     }
