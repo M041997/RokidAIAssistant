@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 
 /**
  * Phone AI Service
@@ -60,6 +61,7 @@ class PhoneAIService : Service() {
         private const val VISUAL_TRANSLATION_RESULT_HOLD_MS = 20000L
         private const val VISUAL_TRANSLATION_VIEW_SETTLE_MS = 2500L
         private const val VISUAL_TRANSLATION_FRAME_HASH_SIMILAR_BITS = 24
+        private const val CUSTOM_VISUAL_TRANSLATION_ROTATION_DEGREES = 90
     }
 
     private enum class PhotoAnalysisMode {
@@ -992,32 +994,43 @@ class PhoneAIService : Service() {
                     }
                 }
 
+                val settings = SettingsRepository.getInstance(this@PhoneAIService).getSettings()
+                val providerLabel = if (settings.aiProvider == AiProvider.CUSTOM) {
+                    "Custom/${settings.customModelName.ifBlank { settings.aiModelId }}"
+                } else {
+                    settings.aiProvider.name
+                }
+                val analysisFrameData = if (settings.aiProvider == AiProvider.CUSTOM) {
+                    rotateJpegFrame(frameData, CUSTOM_VISUAL_TRANSLATION_ROTATION_DEGREES)
+                } else {
+                    frameData
+                }
+
                 updatePipeline(
                     title = "Frame received",
-                    detail = "Sending camera frame to Gemini for translation",
+                    detail = "Sending camera frame to $providerLabel for translation",
                     progress = 0.45f,
                     severity = ServiceBridge.PipelineSeverity.WORKING
                 )
-                val visualLanguage = SettingsRepository.getInstance(this@PhoneAIService)
-                    .getSettings()
-                    .visualTranslationSourceLanguage
-                val result = aiService?.analyzeImage(frameData, buildVisualTranslationPrompt(visualLanguage))
+                val visualLanguage = settings.visualTranslationSourceLanguage
+                val result = aiService?.analyzeImage(analysisFrameData, buildVisualTranslationPrompt(visualLanguage))
                     ?: getString(R.string.ai_analysis_unavailable)
                 val cleanedResult = cleanMarkdown(result)
+                Log.d(TAG, "Visual translation result from $providerLabel: ${cleanedResult.take(160)}")
                 if (currentFrameHash != null) {
                     lastVisualTranslationAnalyzedFrameHash = currentFrameHash
                 }
 
                 if (cleanedResult.contains("API key not valid", ignoreCase = true)) {
                     updatePipeline(
-                        title = "Gemini key rejected",
-                        detail = "The app reached Gemini, but the API key is invalid in this APK/settings.",
+                        title = "API key rejected",
+                        detail = "The app reached $providerLabel, but the API key is invalid in this APK/settings.",
                         progress = 1f,
                         severity = ServiceBridge.PipelineSeverity.ERROR
                     )
                     isVisualTranslationActive = false
                     ServiceBridge.updateVisualTranslationActive(false)
-                    bluetoothManager?.sendMessage(Message.aiError("Gemini API key invalid. Rebuild from .env or update Settings."))
+                    bluetoothManager?.sendMessage(Message.aiError("$providerLabel API key invalid. Rebuild from .env or update Settings."))
                     bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_END))
                     return@launch
                 }
@@ -1080,6 +1093,27 @@ class PhoneAIService : Service() {
             .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
             .trim()
             .replace(Regex("\\s+"), " ")
+    }
+
+    private fun rotateJpegFrame(frameData: ByteArray, rotationDegrees: Int): ByteArray {
+        if (rotationDegrees % 360 == 0) return frameData
+
+        return try {
+            val bitmap = BitmapFactory.decodeByteArray(frameData, 0, frameData.size) ?: return frameData
+            val matrix = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+            val rotated = android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            ByteArrayOutputStream().use { output ->
+                rotated.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, output)
+                if (rotated != bitmap) {
+                    bitmap.recycle()
+                }
+                rotated.recycle()
+                output.toByteArray()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to rotate custom visual translation frame", e)
+            frameData
+        }
     }
 
     private fun visualTranslationFrameHash(frameData: ByteArray): Long? {
