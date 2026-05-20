@@ -321,6 +321,7 @@ Rules:
             }
             
             val imageBase64 = Base64.encodeToString(imageData, Base64.NO_WRAP)
+            var apiErrorMessage: String? = null
             
             val requestJson = JSONObject().apply {
                 put("contents", JSONArray().apply {
@@ -381,6 +382,7 @@ Rules:
                                 val errorMsg = errorJson.optJSONObject("error")?.optString("message")
                                 if (!errorMsg.isNullOrEmpty()) {
                                     Log.e(TAG, "Gemini API error message: $errorMsg")
+                                    apiErrorMessage = errorMsg
                                 }
                             } catch (e: Exception) { /* ignore parse errors */ }
                             null
@@ -392,7 +394,7 @@ Rules:
                 }
             }
             
-            result ?: "Sorry, unable to analyze this image."
+            result ?: apiErrorMessage?.let { "Gemini API error: $it" } ?: "Sorry, unable to analyze this image."
         }
     }
     

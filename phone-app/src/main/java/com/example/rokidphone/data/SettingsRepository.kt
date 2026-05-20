@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.example.rokidphone.BuildConfig
 import com.example.rokidphone.R
 import com.example.rokidphone.service.stt.SttProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -106,6 +107,15 @@ class SettingsRepository(private val context: Context) {
      * Get current settings
      */
     fun getSettings(): ApiSettings = _settingsFlow.value
+
+    private fun sanitizedApiKey(value: String?): String {
+        val trimmed = value?.trim()?.trim('"', '\'') ?: ""
+        return trimmed.takeIf { it.isNotBlank() && it != "=" } ?: ""
+    }
+
+    private fun configuredOrBuildTimeKey(savedValue: String?, buildTimeValue: String): String {
+        return sanitizedApiKey(buildTimeValue).ifBlank { sanitizedApiKey(savedValue) }
+    }
     
     /**
      * Load settings
@@ -132,8 +142,14 @@ class SettingsRepository(private val context: Context) {
                 prefs.getString(KEY_AI_PROVIDER, AiProvider.GEMINI.name) ?: AiProvider.GEMINI.name
             ),
             aiModelId = prefs.getString(KEY_AI_MODEL, "gemini-2.5-flash") ?: "gemini-2.5-flash",
-            geminiApiKey = prefs.getString(KEY_GEMINI_API_KEY, "") ?: "",
-            openaiApiKey = prefs.getString(KEY_OPENAI_API_KEY, "") ?: "",
+            geminiApiKey = configuredOrBuildTimeKey(
+                prefs.getString(KEY_GEMINI_API_KEY, ""),
+                BuildConfig.GEMINI_API_KEY
+            ),
+            openaiApiKey = configuredOrBuildTimeKey(
+                prefs.getString(KEY_OPENAI_API_KEY, ""),
+                BuildConfig.OPENAI_API_KEY
+            ),
             anthropicApiKey = prefs.getString(KEY_ANTHROPIC_API_KEY, "") ?: "",
             deepseekApiKey = prefs.getString(KEY_DEEPSEEK_API_KEY, "") ?: "",
             groqApiKey = prefs.getString(KEY_GROQ_API_KEY, "") ?: "",

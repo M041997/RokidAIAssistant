@@ -12,12 +12,34 @@ android {
     compileSdk = 36
 
     val localPropsFile = rootProject.file("local.properties")
+    val envPropsFile = rootProject.file(".env")
+    fun loadPropertiesFile(file: File): Properties {
+        return Properties().apply {
+            if (file.exists()) {
+                file.inputStream().use { load(it) }
+            }
+        }
+    }
+    val envProps = loadPropertiesFile(envPropsFile)
     val localProps = Properties().apply {
         if (localPropsFile.exists()) {
             localPropsFile.inputStream().use { load(it) }
         }
     }
-    fun localProperty(name: String): String? = localProps.getProperty(name)?.takeIf { it.isNotBlank() }
+    fun sanitizedSecret(value: String?): String {
+        val trimmed = value?.trim()?.trim('"', '\'') ?: ""
+        return trimmed.takeIf { it.isNotBlank() && it != "=" } ?: ""
+    }
+    fun localProperty(name: String): String? = sanitizedSecret(localProps.getProperty(name)).takeIf { it.isNotBlank() }
+    fun secretProperty(vararg names: String): String {
+        for (name in names) {
+            val localValue = sanitizedSecret(localProps.getProperty(name))
+            if (localValue.isNotBlank()) return localValue
+            val envValue = sanitizedSecret(envProps.getProperty(name))
+            if (envValue.isNotBlank()) return envValue
+        }
+        return ""
+    }
 
     val releaseStoreFile = localProperty("RELEASE_STORE_FILE")
     val releaseStorePassword = localProperty("RELEASE_STORE_PASSWORD")
@@ -41,11 +63,15 @@ android {
 
         // API Keys - Read from local.properties, do not hardcode
         // Rokid SDK Configuration
-        buildConfigField("String", "ROKID_CLIENT_SECRET", "\"${localProps.getProperty("ROKID_CLIENT_SECRET", "")}\"")
+        buildConfigField("String", "ROKID_CLIENT_SECRET", "\"${secretProperty("ROKID_CLIENT_SECRET")}\"")
 
         // API Keys
-        buildConfigField("String", "GEMINI_API_KEY", "\"${localProps.getProperty("GEMINI_API_KEY", "")}\"")
-        buildConfigField("String", "OPENAI_API_KEY", "\"${localProps.getProperty("OPENAI_API_KEY", "")}\"")
+        buildConfigField(
+            "String",
+            "GEMINI_API_KEY",
+            "\"${secretProperty("GEMINI_API_KEY", "GoogleGeminiAPIKey", "GOOGLE_GEMINI_API_KEY", "GOOGLE_API_KEY")}\""
+        )
+        buildConfigField("String", "OPENAI_API_KEY", "\"${secretProperty("OPENAI_API_KEY")}\"")
     }
 
     signingConfigs {

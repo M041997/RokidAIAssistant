@@ -16,6 +16,23 @@ private const val TAG = "ServiceBridge"
  * Uses singleton pattern so Service and Activity/ViewModel can share message flow
  */
 object ServiceBridge {
+    enum class PipelineSeverity {
+        IDLE,
+        WORKING,
+        SUCCESS,
+        WARNING,
+        ERROR
+    }
+
+    data class PipelineStatus(
+        val title: String = "Ready",
+        val detail: String = "Waiting for glasses input",
+        val progress: Float = 0f,
+        val severity: PipelineSeverity = PipelineSeverity.IDLE
+    )
+
+    private val _pipelineStatusFlow = MutableStateFlow(PipelineStatus())
+    val pipelineStatusFlow: StateFlow<PipelineStatus> = _pipelineStatusFlow.asStateFlow()
     
     private val _conversationFlow = MutableSharedFlow<Message>(replay = 0)
     val conversationFlow: SharedFlow<Message> = _conversationFlow.asSharedFlow()
@@ -125,6 +142,14 @@ object ServiceBridge {
      */
     suspend fun emitConversation(message: Message) {
         _conversationFlow.emit(message)
+    }
+
+    /**
+     * Update the visible processing pipeline status shown on the Home screen.
+     */
+    fun updatePipelineStatus(status: PipelineStatus) {
+        Log.d(TAG, "Pipeline status: ${status.title} - ${status.detail}")
+        _pipelineStatusFlow.value = status
     }
     
     /**

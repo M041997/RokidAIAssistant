@@ -32,7 +32,8 @@ data class PhoneUiState(
     val showApiKeyWarning: Boolean = false,  // Flag to show API key warning dialog
     val showInitialSetup: Boolean = false,   // Flag to show initial setup dialog (no API key configured)
     val latestPhotoPath: String? = null,     // Path to the latest received photo
-    val recordingState: RecordingState = RecordingState.Idle  // Recording state
+    val recordingState: RecordingState = RecordingState.Idle,  // Recording state
+    val pipelineStatus: ServiceBridge.PipelineStatus = ServiceBridge.PipelineStatus()
 )
 
 class PhoneViewModel(application: Application) : AndroidViewModel(application) {
@@ -98,6 +99,13 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
             ServiceBridge.latestPhotoPathFlow.collect { path ->
                 Log.d(TAG, "Received latest photo path: $path")
                 _uiState.update { it.copy(latestPhotoPath = path) }
+            }
+        }
+
+        // Listen to detailed pipeline status
+        viewModelScope.launch {
+            ServiceBridge.pipelineStatusFlow.collect { status ->
+                _uiState.update { it.copy(pipelineStatus = status) }
             }
         }
         

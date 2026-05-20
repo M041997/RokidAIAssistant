@@ -27,6 +27,7 @@ import com.example.rokidphone.R
 import com.example.rokidphone.data.AvailableModels
 import com.example.rokidphone.data.db.RecordingSource
 import com.example.rokidphone.data.db.RecordingState
+import com.example.rokidphone.service.ServiceBridge
 import com.example.rokidphone.ui.components.*
 import com.example.rokidphone.ui.theme.AppShapeTokens
 import com.example.rokidphone.ui.theme.ExtendedTheme
@@ -43,6 +44,7 @@ fun HomeScreen(
     isServiceRunning: Boolean,
     latestPhotoPath: String?,
     processingStatus: String?,
+    pipelineStatus: ServiceBridge.PipelineStatus,
     currentModelId: String,
     conversations: List<ConversationItem>,
     recordingState: RecordingState = RecordingState.Idle,
@@ -125,6 +127,10 @@ fun HomeScreen(
                 onConnect = onConnect,
                 onDisconnect = onDisconnect
             )
+        }
+
+        item {
+            PipelineStatusBar(status = pipelineStatus)
         }
         
         // Camera capture card (only when connected)
@@ -246,6 +252,78 @@ fun HomeScreen(
             StatusFooter(
                 processingStatus = processingStatus,
                 modelName = currentModel?.displayName ?: currentModelId
+            )
+        }
+    }
+}
+
+@Composable
+private fun PipelineStatusBar(
+    status: ServiceBridge.PipelineStatus
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val containerColor = when (status.severity) {
+        ServiceBridge.PipelineSeverity.ERROR -> colorScheme.errorContainer
+        ServiceBridge.PipelineSeverity.WARNING -> colorScheme.tertiaryContainer
+        ServiceBridge.PipelineSeverity.SUCCESS -> ExtendedTheme.colors.successContainer
+        ServiceBridge.PipelineSeverity.WORKING -> colorScheme.primaryContainer
+        ServiceBridge.PipelineSeverity.IDLE -> colorScheme.surfaceVariant
+    }
+    val contentColor = when (status.severity) {
+        ServiceBridge.PipelineSeverity.ERROR -> colorScheme.onErrorContainer
+        ServiceBridge.PipelineSeverity.WARNING -> colorScheme.onTertiaryContainer
+        ServiceBridge.PipelineSeverity.SUCCESS -> ExtendedTheme.colors.success
+        ServiceBridge.PipelineSeverity.WORKING -> colorScheme.onPrimaryContainer
+        ServiceBridge.PipelineSeverity.IDLE -> colorScheme.onSurfaceVariant
+    }
+    val icon = when (status.severity) {
+        ServiceBridge.PipelineSeverity.ERROR -> Icons.Default.Error
+        ServiceBridge.PipelineSeverity.WARNING -> Icons.Default.Warning
+        ServiceBridge.PipelineSeverity.SUCCESS -> Icons.Default.CheckCircle
+        ServiceBridge.PipelineSeverity.WORKING -> Icons.Default.Sync
+        ServiceBridge.PipelineSeverity.IDLE -> Icons.Default.Info
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(18.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = status.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = contentColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = status.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor
+                    )
+                }
+            }
+            LinearProgressIndicator(
+                progress = { status.progress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = contentColor,
+                trackColor = contentColor.copy(alpha = 0.2f)
             )
         }
     }

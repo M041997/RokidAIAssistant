@@ -245,6 +245,7 @@ fun PhoneMainScreen(
                     isServiceRunning = uiState.isServiceRunning,
                     latestPhotoPath = uiState.latestPhotoPath,
                     processingStatus = uiState.processingStatus,
+                    pipelineStatus = uiState.pipelineStatus,
                     currentModelId = settings.aiModelId,
                     conversations = uiState.conversations,
                     recordingState = uiState.recordingState,

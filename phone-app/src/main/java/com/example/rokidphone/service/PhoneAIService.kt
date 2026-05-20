@@ -36,6 +36,9 @@ import com.rokid.cxr.client.utils.ValueUtil
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
 
 /**
  * Phone AI Service
@@ -107,9 +110,104 @@ class PhoneAIService : Service() {
     private var isVisualTranslationFrameInFlight = false
     private var lastVisualTranslationFrameMs = 0L
     private var lastVisualTranslationText = ""
+
+    private fun updatePipeline(
+        title: String,
+        detail: String,
+        progress: Float,
+        severity: ServiceBridge.PipelineSeverity
+    ) {
+        ServiceBridge.updatePipelineStatus(
+            ServiceBridge.PipelineStatus(
+                title = title,
+                detail = detail,
+                progress = progress,
+                severity = severity
+            )
+        )
+    }
+
+    private fun validateGeminiKeyForStatus(settings: ApiSettings) {
+        val geminiKey = settings.geminiApiKey.trim()
+        val fingerprint = if (geminiKey.length >= 8) {
+            "${geminiKey.take(4)}:${geminiKey.takeLast(4)}:${geminiKey.length}"
+        } else {
+            "missing"
+        }
+
+        if (fingerprint == lastValidatedGeminiKeyFingerprint) return
+        lastValidatedGeminiKeyFingerprint = fingerprint
+
+        if (geminiKey.isBlank()) {
+            updatePipeline(
+                title = "Gemini key missing",
+                detail = "No Gemini key found in app settings or build-time .env.",
+                progress = 1f,
+                severity = ServiceBridge.PipelineSeverity.ERROR
+            )
+            return
+        }
+
+        updatePipeline(
+            title = "Checking Gemini key",
+            detail = "Validating the configured key with Google AI",
+            progress = 0.2f,
+            severity = ServiceBridge.PipelineSeverity.WORKING
+        )
+
+        serviceScope.launch {
+            val result = validateGeminiApiKey(geminiKey)
+            if (result == null) {
+                updatePipeline(
+                    title = "Gemini key valid",
+                    detail = "Ready for image translation and transcription",
+                    progress = 1f,
+                    severity = ServiceBridge.PipelineSeverity.SUCCESS
+                )
+            } else {
+                updatePipeline(
+                    title = "Gemini key invalid",
+                    detail = result,
+                    progress = 1f,
+                    severity = ServiceBridge.PipelineSeverity.ERROR
+                )
+            }
+        }
+    }
+
+    private suspend fun validateGeminiApiKey(apiKey: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey")
+                .get()
+                .build()
+
+            keyValidationClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) return@withContext null
+
+                val body = response.body?.string()
+                val apiMessage = try {
+                    JSONObject(body ?: "{}")
+                        .optJSONObject("error")
+                        ?.optString("message")
+                        ?.takeIf { it.isNotBlank() }
+                } catch (e: Exception) {
+                    null
+                }
+
+                apiMessage ?: "Google AI rejected the key with HTTP ${response.code}"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Gemini key validation failed", e)
+            "Could not validate key: ${e.message ?: "network error"}"
+        }
+    }
     
     private val _messageFlow = MutableSharedFlow<Message>()
     val messageFlow = _messageFlow.asSharedFlow()
+
+    private val keyValidationClient = OkHttpClient()
+    private var lastValidatedGeminiKeyFingerprint: String? = null
     
     override fun onCreate() {
         super.onCreate()
@@ -163,6 +261,7 @@ class PhoneAIService : Service() {
             // Use factory to create AI service
             aiService = createAiService(validatedSettings)
             Log.d(TAG, "AI service created: ${aiService != null}")
+            validateGeminiKeyForStatus(validatedSettings)
             
             // Set speech recognition service (prefer providers supporting STT)
             speechService = createSpeechService(validatedSettings)
@@ -182,6 +281,7 @@ class PhoneAIService : Service() {
                     aiService = createAiService(validatedNewSettings)
                     speechService = createSpeechService(validatedNewSettings)
                     sttService = createSttService(validatedNewSettings)
+                    validateGeminiKeyForStatus(validatedNewSettings)
                     
                     // Handle Live mode transitions
                     handleLiveModeTransition(validatedNewSettings)
@@ -764,12 +864,24 @@ class PhoneAIService : Service() {
         val apiKey = settingsRepository.getSettings().geminiApiKey
         if (apiKey.isBlank()) {
             Log.e(TAG, "API key is not configured, aborting visual translation")
+            updatePipeline(
+                title = "Visual translation blocked",
+                detail = "Gemini API key is missing. Add it to .env and rebuild, or enter it in Settings.",
+                progress = 0f,
+                severity = ServiceBridge.PipelineSeverity.ERROR
+            )
             notifyApiKeyMissing()
             bluetoothManager?.sendMessage(Message.aiError("API key not configured. Please set up an API key in Settings."))
             return
         }
 
         Log.d(TAG, "Starting continuous visual translation")
+        updatePipeline(
+            title = "Visual translation starting",
+            detail = "Requesting camera frames from glasses",
+            progress = 0.1f,
+            severity = ServiceBridge.PipelineSeverity.WORKING
+        )
         isVisualTranslationActive = true
         lastVisualTranslationFrameMs = 0L
         lastVisualTranslationText = ""
@@ -779,6 +891,12 @@ class PhoneAIService : Service() {
 
     private suspend fun stopVisualTranslation() {
         Log.d(TAG, "Stopping continuous visual translation")
+        updatePipeline(
+            title = "Visual translation stopped",
+            detail = "Camera frame translation is off",
+            progress = 0f,
+            severity = ServiceBridge.PipelineSeverity.IDLE
+        )
         isVisualTranslationActive = false
         isVisualTranslationFrameInFlight = false
         bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_END))
@@ -796,12 +914,37 @@ class PhoneAIService : Service() {
         serviceScope.launch {
             try {
                 Log.d(TAG, "Analyzing visual translation frame: ${frameData.size} bytes")
+                updatePipeline(
+                    title = "Frame received",
+                    detail = "Sending camera frame to Gemini for translation",
+                    progress = 0.45f,
+                    severity = ServiceBridge.PipelineSeverity.WORKING
+                )
                 val result = aiService?.analyzeImage(frameData, VISUAL_TRANSLATION_PROMPT)
                     ?: getString(R.string.ai_analysis_unavailable)
                 val cleanedResult = cleanMarkdown(result)
 
+                if (cleanedResult.contains("API key not valid", ignoreCase = true)) {
+                    updatePipeline(
+                        title = "Gemini key rejected",
+                        detail = "The app reached Gemini, but the API key is invalid in this APK/settings.",
+                        progress = 1f,
+                        severity = ServiceBridge.PipelineSeverity.ERROR
+                    )
+                    isVisualTranslationActive = false
+                    bluetoothManager?.sendMessage(Message.aiError("Gemini API key invalid. Rebuild from .env or update Settings."))
+                    bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_END))
+                    return@launch
+                }
+
                 if (cleanedResult.isNotBlank() && cleanedResult != lastVisualTranslationText) {
                     lastVisualTranslationText = cleanedResult
+                    updatePipeline(
+                        title = "Translation updated",
+                        detail = cleanedResult.take(120),
+                        progress = 1f,
+                        severity = ServiceBridge.PipelineSeverity.SUCCESS
+                    )
                     bluetoothManager?.sendMessage(Message.aiResponseText(cleanedResult))
                     ServiceBridge.emitConversation(Message(
                         type = MessageType.AI_RESPONSE_TEXT,
@@ -810,6 +953,12 @@ class PhoneAIService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Visual translation frame failed", e)
+                updatePipeline(
+                    title = "Translation failed",
+                    detail = e.message ?: "Unexpected visual translation error",
+                    progress = 1f,
+                    severity = ServiceBridge.PipelineSeverity.ERROR
+                )
             } finally {
                 isVisualTranslationFrameInFlight = false
             }
@@ -1155,6 +1304,12 @@ class PhoneAIService : Service() {
             if (settings.pushRecordingToGlasses) {
                 bluetoothManager?.sendMessage(Message.aiProcessing(getString(R.string.recognizing_speech)))
             }
+            updatePipeline(
+                title = "Audio received",
+                detail = "Sending recording to speech recognition",
+                progress = 0.35f,
+                severity = ServiceBridge.PipelineSeverity.WORKING
+            )
             ServiceBridge.emitConversation(Message(
                 type = MessageType.AI_PROCESSING,
                 payload = getString(R.string.recognizing_speech)
@@ -1163,6 +1318,12 @@ class PhoneAIService : Service() {
             // 1. Speech recognition
             val transcriptResult = performSpeechRecognition(audioData, filePath, settings.speechLanguage)
             val transcript = extractTranscript(transcriptResult, recordingId, settings) ?: return
+            updatePipeline(
+                title = "Speech recognized",
+                detail = transcript.take(120),
+                progress = 0.65f,
+                severity = ServiceBridge.PipelineSeverity.SUCCESS
+            )
             
             // 2. Update recording with transcript
             recordingRepository?.updateTranscript(recordingId, transcript)
@@ -1171,6 +1332,12 @@ class PhoneAIService : Service() {
             if (settings.pushRecordingToGlasses) {
                 bluetoothManager?.sendMessage(Message.aiProcessing(getString(R.string.thinking)))
             }
+            updatePipeline(
+                title = "Asking AI",
+                detail = "Generating answer from transcript",
+                progress = 0.8f,
+                severity = ServiceBridge.PipelineSeverity.WORKING
+            )
             ServiceBridge.emitConversation(Message(
                 type = MessageType.AI_PROCESSING,
                 payload = getString(R.string.thinking)
@@ -1214,6 +1381,12 @@ class PhoneAIService : Service() {
             ttsService?.speak(aiResponse) { }
             
             Log.d(TAG, "Phone recording processed successfully: $recordingId")
+            updatePipeline(
+                title = "Recording processed",
+                detail = "Transcript and AI response saved",
+                progress = 1f,
+                severity = ServiceBridge.PipelineSeverity.SUCCESS
+            )
             
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             Log.d(TAG, "Phone recording processing cancelled (service stopping)")
@@ -1299,6 +1472,12 @@ class PhoneAIService : Service() {
      * Notify recording error to database, glasses, and phone UI
      */
     private suspend fun notifyRecordingError(recordingId: String, message: String, settings: ApiSettings) {
+        updatePipeline(
+            title = "Recording failed",
+            detail = message,
+            progress = 1f,
+            severity = ServiceBridge.PipelineSeverity.ERROR
+        )
         recordingRepository?.markError(recordingId, message)
         if (settings.pushRecordingToGlasses) {
             bluetoothManager?.sendMessage(Message.aiError(message))
