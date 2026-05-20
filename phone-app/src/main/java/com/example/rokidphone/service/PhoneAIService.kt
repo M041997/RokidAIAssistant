@@ -1878,8 +1878,11 @@ class PhoneAIService : Service() {
     private fun createAiService(settings: ApiSettings): AiServiceProvider {
         // If no API key configured, notify user
         val effectiveSettings = if (settings.getCurrentApiKey().isBlank()) {
+            if (settings.aiProvider == AiProvider.CUSTOM && settings.customBaseUrl.isNotBlank()) {
+                Log.d(TAG, "Custom provider has no API key; keeping custom provider and using a local placeholder key")
+                settings.copy(customApiKey = settings.customApiKey.ifBlank { "local" })
             // Check if BuildConfig has a valid Gemini API key as fallback
-            if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
+            } else if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
                 Log.d(TAG, "No API key for ${settings.aiProvider}, using development fallback")
                 settings.copy(
                     aiProvider = AiProvider.GEMINI,
@@ -2012,6 +2015,19 @@ class PhoneAIService : Service() {
             Log.w(TAG, "Model '${settings.aiModelId}' is deprecated, migrating to '$replacement'")
             settings.copy(aiModelId = replacement)
         } ?: settings
+
+        if (migratedSettings.aiProvider == AiProvider.CUSTOM) {
+            val customModels = AvailableModels.getModelsForProvider(AiProvider.CUSTOM)
+            val customModelId = customModels.firstOrNull { it.id == migratedSettings.aiModelId }?.id
+                ?: customModels.firstOrNull { it.id == "qwen3" }?.id
+                ?: customModels.firstOrNull()?.id
+                ?: "custom"
+            return migratedSettings.copy(
+                aiProvider = AiProvider.CUSTOM,
+                aiModelId = customModelId,
+                customApiKey = migratedSettings.customApiKey.ifBlank { "local" }
+            )
+        }
         
         val modelInfo = AvailableModels.findModel(migratedSettings.aiModelId)
         
