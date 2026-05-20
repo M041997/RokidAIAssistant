@@ -1080,6 +1080,7 @@ data class ApiSettings(
     // Empty string = SettingsRepository will resolve to device locale on first run.
     // TODO: UI should display the resolved locale tag so users know what is active.
     val speechLanguage: String = "",
+    val visualTranslationSourceLanguage: String = VisualTranslationLanguages.AUTO,
     
     // === STT Provider Credentials ===
     

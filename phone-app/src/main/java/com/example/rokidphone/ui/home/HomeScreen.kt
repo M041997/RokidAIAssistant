@@ -25,6 +25,7 @@ import com.example.rokidcommon.protocol.ConnectionState
 import com.example.rokidphone.ConversationItem
 import com.example.rokidphone.R
 import com.example.rokidphone.data.AvailableModels
+import com.example.rokidphone.data.VisualTranslationLanguages
 import com.example.rokidphone.data.db.RecordingSource
 import com.example.rokidphone.data.db.RecordingState
 import com.example.rokidphone.service.ServiceBridge
@@ -46,6 +47,7 @@ fun HomeScreen(
     processingStatus: String?,
     pipelineStatus: ServiceBridge.PipelineStatus,
     currentModelId: String,
+    visualTranslationSourceLanguage: String,
     conversations: List<ConversationItem>,
     recordingState: RecordingState = RecordingState.Idle,
     onConnect: () -> Unit,
@@ -140,7 +142,8 @@ fun HomeScreen(
                     onCapturePhoto = onCapturePhoto,
                     onCaptureTranslationPhoto = onCaptureTranslationPhoto,
                     onStartVisualTranslation = onStartVisualTranslation,
-                    onStopVisualTranslation = onStopVisualTranslation
+                    onStopVisualTranslation = onStopVisualTranslation,
+                    visualTranslationSourceLanguage = visualTranslationSourceLanguage
                 )
             }
         }
@@ -530,13 +533,26 @@ private fun CameraCaptureCard(
     onCapturePhoto: () -> Unit,
     onCaptureTranslationPhoto: () -> Unit,
     onStartVisualTranslation: () -> Unit,
-    onStopVisualTranslation: () -> Unit
+    onStopVisualTranslation: () -> Unit,
+    visualTranslationSourceLanguage: String
 ) {
+    val visualLanguage = VisualTranslationLanguages.fromCode(visualTranslationSourceLanguage)
+    val liveTitle = if (visualLanguage.code == VisualTranslationLanguages.AUTO) {
+        stringResource(R.string.live_visual_translation)
+    } else {
+        stringResource(R.string.live_visual_translation_with_language, visualLanguage.displayName)
+    }
+    val liveHint = if (visualLanguage.code == VisualTranslationLanguages.AUTO) {
+        stringResource(R.string.live_visual_translation_hint)
+    } else {
+        stringResource(R.string.live_visual_translation_hint_with_language, visualLanguage.displayName)
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ActionCard(
             icon = Icons.Default.Translate,
-            title = stringResource(R.string.live_visual_translation),
-            subtitle = stringResource(R.string.live_visual_translation_hint),
+            title = liveTitle,
+            subtitle = liveHint,
             actionLabel = stringResource(R.string.start),
             onAction = onStartVisualTranslation,
             iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,

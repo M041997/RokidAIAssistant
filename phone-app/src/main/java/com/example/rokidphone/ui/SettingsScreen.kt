@@ -59,6 +59,7 @@ fun SettingsScreen(
     var showSpeechServiceDialog by remember { mutableStateOf(false) }
     var showSystemPromptDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showVisualTranslationLanguageDialog by remember { mutableStateOf(false) }
     var showCustomModelDialog by remember { mutableStateOf(false) }
     var currentLanguage by remember { mutableStateOf(LanguageManager.getCurrentLanguage(context)) }
     
@@ -91,6 +92,12 @@ fun SettingsScreen(
                         title = stringResource(R.string.app_language),
                         subtitle = "${currentLanguage.nativeName} (${currentLanguage.displayName})",
                         onClick = { showLanguageDialog = true }
+                    )
+                    HorizontalDivider()
+                    SettingsRow(
+                        title = stringResource(R.string.visual_translation_language),
+                        subtitle = VisualTranslationLanguages.displayName(settings.visualTranslationSourceLanguage),
+                        onClick = { showVisualTranslationLanguageDialog = true }
                     )
                 }
             }
@@ -502,6 +509,17 @@ fun SettingsScreen(
                 showLanguageDialog = false
             },
             onDismiss = { showLanguageDialog = false }
+        )
+    }
+
+    if (showVisualTranslationLanguageDialog) {
+        VisualTranslationLanguageDialog(
+            selectedCode = settings.visualTranslationSourceLanguage,
+            onSelect = { language ->
+                onSettingsChange(settings.copy(visualTranslationSourceLanguage = language.code))
+                showVisualTranslationLanguageDialog = false
+            },
+            onDismiss = { showVisualTranslationLanguageDialog = false }
         )
     }
 }
@@ -1294,6 +1312,46 @@ fun LanguageSelectionDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun VisualTranslationLanguageDialog(
+    selectedCode: String,
+    onSelect: (VisualTranslationLanguageOption) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.select_visual_translation_language)) },
+        text = {
+            LazyColumn {
+                items(VisualTranslationLanguages.options) { language ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(language) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = language.code == selectedCode,
+                            onClick = { onSelect(language) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = language.displayName,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
                     }
                 }
             }

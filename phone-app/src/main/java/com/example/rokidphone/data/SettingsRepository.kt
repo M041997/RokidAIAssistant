@@ -26,6 +26,7 @@ class SettingsRepository(private val context: Context) {
         private const val KEY_AI_MODEL = "ai_model"
         private const val KEY_STT_PROVIDER = "stt_provider"
         private const val KEY_SPEECH_LANGUAGE = "speech_language"
+        private const val KEY_VISUAL_TRANSLATION_SOURCE_LANGUAGE = "visual_translation_source_language"
         private const val KEY_RESPONSE_LANGUAGE = "response_language"
         private const val KEY_SYSTEM_PROMPT = "system_prompt"
         
@@ -177,6 +178,10 @@ class SettingsRepository(private val context: Context) {
                 KEY_SPEECH_LANGUAGE,
                 Locale.getDefault().toLanguageTag()
             ) ?: Locale.getDefault().toLanguageTag(),
+            visualTranslationSourceLanguage = prefs.getString(
+                KEY_VISUAL_TRANSLATION_SOURCE_LANGUAGE,
+                VisualTranslationLanguages.AUTO
+            ) ?: VisualTranslationLanguages.AUTO,
             responseLanguage = prefs.getString(
                 KEY_RESPONSE_LANGUAGE,
                 Locale.getDefault().toLanguageTag()
@@ -254,6 +259,7 @@ class SettingsRepository(private val context: Context) {
             putString(KEY_CUSTOM_MODEL_NAME, settings.customModelName)
             putString(KEY_STT_PROVIDER, settings.sttProvider.name)
             putString(KEY_SPEECH_LANGUAGE, settings.speechLanguage)
+            putString(KEY_VISUAL_TRANSLATION_SOURCE_LANGUAGE, settings.visualTranslationSourceLanguage)
             putString(KEY_RESPONSE_LANGUAGE, settings.responseLanguage)
             putString(KEY_SYSTEM_PROMPT, settings.systemPrompt)
             putString(KEY_TTS_PROVIDER, settings.ttsProvider.name)

@@ -18,6 +18,7 @@ import com.example.rokidphone.data.AiProvider
 import com.example.rokidphone.data.ApiSettings
 import com.example.rokidphone.data.AvailableModels
 import com.example.rokidphone.data.SettingsRepository
+import com.example.rokidphone.data.VisualTranslationLanguages
 import com.example.rokidphone.data.db.ConversationRepository
 import com.example.rokidphone.data.db.RecordingRepository
 import com.example.rokidphone.service.ai.AiServiceFactory
@@ -55,11 +56,6 @@ class PhoneAIService : Service() {
     companion object {
         private const val TAG = "PhoneAIService"
         private const val VISUAL_TRANSLATION_FRAME_INTERVAL_MS = 3000L
-        private const val VISUAL_TRANSLATION_PROMPT =
-            "Read any visible Japanese text in this image and translate it into natural English. " +
-                "Return only the English translation for the glasses display. " +
-                "If there are multiple signs or lines, keep the same order and use short line breaks. " +
-                "If no Japanese text is visible, say: No Japanese text visible."
     }
 
     private enum class PhotoAnalysisMode {
@@ -814,7 +810,9 @@ class PhoneAIService : Service() {
             nextPhotoAnalysisMode = PhotoAnalysisMode.DESCRIPTION
             val prompt = when (analysisMode) {
                 PhotoAnalysisMode.DESCRIPTION -> getString(R.string.image_analysis_prompt)
-                PhotoAnalysisMode.VISUAL_TRANSLATION -> VISUAL_TRANSLATION_PROMPT
+                PhotoAnalysisMode.VISUAL_TRANSLATION -> buildVisualTranslationPrompt(
+                    SettingsRepository.getInstance(this).getSettings().visualTranslationSourceLanguage
+                )
             }
             
             // Use AI service to analyze the image with the selected prompt
@@ -876,9 +874,10 @@ class PhoneAIService : Service() {
         }
 
         Log.d(TAG, "Starting continuous visual translation")
+        val visualLanguage = VisualTranslationLanguages.displayName(settingsRepository.getSettings().visualTranslationSourceLanguage)
         updatePipeline(
             title = "Visual translation starting",
-            detail = "Requesting camera frames from glasses",
+            detail = "Requesting camera frames from glasses ($visualLanguage to English)",
             progress = 0.1f,
             severity = ServiceBridge.PipelineSeverity.WORKING
         )
@@ -886,7 +885,7 @@ class PhoneAIService : Service() {
         lastVisualTranslationFrameMs = 0L
         lastVisualTranslationText = ""
         bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_START))
-        bluetoothManager?.sendMessage(Message.aiProcessing("Live visual translation active"))
+        bluetoothManager?.sendMessage(Message.aiProcessing("Live visual translation active: $visualLanguage to English"))
     }
 
     private suspend fun stopVisualTranslation() {
@@ -920,7 +919,10 @@ class PhoneAIService : Service() {
                     progress = 0.45f,
                     severity = ServiceBridge.PipelineSeverity.WORKING
                 )
-                val result = aiService?.analyzeImage(frameData, VISUAL_TRANSLATION_PROMPT)
+                val visualLanguage = SettingsRepository.getInstance(this@PhoneAIService)
+                    .getSettings()
+                    .visualTranslationSourceLanguage
+                val result = aiService?.analyzeImage(frameData, buildVisualTranslationPrompt(visualLanguage))
                     ?: getString(R.string.ai_analysis_unavailable)
                 val cleanedResult = cleanMarkdown(result)
 
@@ -963,6 +965,20 @@ class PhoneAIService : Service() {
                 isVisualTranslationFrameInFlight = false
             }
         }
+    }
+
+    private fun buildVisualTranslationPrompt(sourceLanguageCode: String): String {
+        val sourceText = VisualTranslationLanguages.promptSource(sourceLanguageCode)
+        val noTextMessage = if (sourceLanguageCode == VisualTranslationLanguages.AUTO) {
+            "No translatable text visible."
+        } else {
+            "No ${VisualTranslationLanguages.displayName(sourceLanguageCode)} text visible."
+        }
+
+        return "Read $sourceText in this image and translate it into natural English. " +
+            "Return only the English translation for the glasses display. " +
+            "If there are multiple signs or lines, keep the same order and use short line breaks. " +
+            "If no matching text is visible, say: $noTextMessage"
     }
     
     /**

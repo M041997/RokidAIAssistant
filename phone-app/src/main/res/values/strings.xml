@@ -99,6 +99,8 @@
     <string name="language_settings">Language</string>
     <string name="select_language">Select Language</string>
     <string name="app_language">App Language</string>
+    <string name="visual_translation_language">Visual translation language</string>
+    <string name="select_visual_translation_language">Select Visual Translation Language</string>
     <string name="response_language">AI Response Language</string>
     
     <!-- Status Messages -->
@@ -279,9 +281,11 @@
     <string name="image_ocr_prompt">Please identify and extract all text content from this image. If there are tables, maintain the format. If there is no text, describe the image content.</string>
     <string name="image_translate_prompt">Please identify the text in the image and translate it. Provide both the original and translated text.</string>
     <string name="visual_translation">Photo translation</string>
-    <string name="visual_translation_hint">Take one still photo and translate visible Japanese text to English.</string>
-    <string name="live_visual_translation">Live Japanese to English</string>
-    <string name="live_visual_translation_hint">Continuously translate visible Japanese text to English on the glasses.</string>
+    <string name="visual_translation_hint">Take one still photo and translate visible text to English.</string>
+    <string name="live_visual_translation">Live translate to English</string>
+    <string name="live_visual_translation_with_language">Live %1$s to English</string>
+    <string name="live_visual_translation_hint">Continuously translate visible text to English on the glasses.</string>
+    <string name="live_visual_translation_hint_with_language">Continuously translate visible %1$s text to English on the glasses.</string>
     <string name="stop_visual_translation">Stop visual translation</string>
     <string name="stop_visual_translation_hint">Stop sending camera frames for translation.</string>
     <string name="translate">Translate</string>
