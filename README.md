@@ -9,6 +9,38 @@
 
 ---
 
+## Current Project Checkpoint
+
+Last verified checkpoint: `backup/audio-visual-translation-checkpoint`
+
+Current working state:
+
+- Phone app is installed and using the Gemini key from `.env` / build config by default.
+- In-app pipeline status reports whether the Gemini key is missing, checking, valid, or rejected.
+- Glasses audio recordings now process successfully through STT and AI response generation.
+- Live visual translation works for Japanese to English.
+- Live visual translation now supports source-language auto-detect to English, plus explicit choices such as Japanese, Spanish, German, and French.
+- Local/custom OpenAI-compatible vision models are enabled as a future option. A local Qwen3 VL server can be tested later as a fallback or fast path.
+- Glasses live visual translation frames now use a centered `2x` zoom crop before being sent to the phone.
+
+What we are testing next:
+
+1. Re-upload the staged glasses APK with RokidApkUploader:
+   `Downloads/glasses-app-debug.apk`
+2. Start `Live translate to English` with visual translation language set to `Auto-detect`.
+3. Verify the new `2x` zoom crop better matches the user's view through the glasses.
+4. Test Japanese, Spanish, German, and French text into English.
+5. Watch the in-app status bar for key/provider/frame/translation state.
+
+Notes:
+
+- The phone APK is already installed for the current checkpoint.
+- The glasses APK must be uploaded again before the `2x` zoom behavior is active on the glasses.
+- `/sdcard/Download/...` means the Pixel's internal Downloads folder, not a physical SD card.
+- The current experience is live translation text on the glasses, not yet a Google Translate-style spatial text replacement overlay.
+
+---
+
 ## 🚀 Quick Start (5 minutes)
 
 ```bash
@@ -18,6 +50,8 @@ git clone https://github.com/your-repo/RokidAIAssistant.git && cd RokidAIAssista
 # 2. Configure API keys
 cp local.properties.template local.properties
 # Edit local.properties → Add your GEMINI_API_KEY (required)
+# .env is also supported for GEMINI_API_KEY, GoogleGeminiAPIKey,
+# GOOGLE_GEMINI_API_KEY, or GOOGLE_API_KEY.
 
 # 3. Build & Install
 ./gradlew :phone-app:installDebug    # Install phone app
@@ -34,6 +68,7 @@ cp local.properties.template local.properties
 
 - Voice-to-text transcription and AI chat on Rokid AR glasses
 - Photo capture from glasses camera with AI image analysis
+- Live visual translation from glasses camera frames to English
 - Phone ↔ Glasses communication via Rokid CXR SDK
 - Multiple AI/STT provider support (Gemini, OpenAI, Anthropic, etc.)
 - Conversation history persistence
@@ -42,7 +77,7 @@ cp local.properties.template local.properties
 
 - Standalone glasses-only operation (phone required for AI processing)
 - Offline AI inference
-- Video streaming or real-time AR overlays
+- Google Translate-style spatial text replacement overlays
 
 ---
 
@@ -52,6 +87,7 @@ cp local.properties.template local.properties
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 🎤 Voice Interaction    | Speak to AI through glasses or phone                                                                                                                                                                                                       |
 | 📷 Photo Analysis       | Capture images with glasses camera, get AI analysis                                                                                                                                                                                        |
+| 🌐 Live Translation     | Continuously translate visible text from glasses camera frames into English, with auto-detect and configurable source language                                                                                                              |
 | 🎙️ Recording & Analysis | Record audio from phone or glasses with auto AI transcription and analysis                                                                                                                                                                 |
 | 🤖 Multi-AI Providers   | 14 providers: Gemini, OpenAI, Anthropic, DeepSeek, Groq, xAI, Alibaba (Qwen), Zhipu (GLM), Baidu, Perplexity, Moonshot (Kimi), Mistral, Gemini Live, Custom (OpenAI-compatible)                                                            |
 | 🎧 Multi-STT Providers  | 18 providers: Gemini, OpenAI Whisper, Groq Whisper, Deepgram, AssemblyAI, Azure Speech, iFLYTEK, Google Cloud STT, AWS Transcribe, Alibaba ASR, Tencent ASR, Baidu ASR, IBM Watson, Huawei SIS, Volcengine, Rev.ai, Speechmatics, Otter.ai |
@@ -239,6 +275,19 @@ Unit and integration test suites are implemented for protocol, service, factory,
 
 ### Manual Testing Checklist
 
+Current checkpoint:
+
+- [x] Phone app reads the build-time `.env` Gemini key
+- [x] In-app status bar confirms Gemini key validity
+- [x] Glasses audio recording processes through STT and AI response
+- [x] Live Japanese to English visual translation works
+- [x] Auto-detect visual translation mode is implemented
+- [x] Glasses APK with `2x` live-frame zoom is built and staged on the phone
+- [ ] Re-upload staged glasses APK with RokidApkUploader
+- [ ] Validate `2x` zoom framing in live visual translation
+- [ ] Test auto-detect translation on Japanese, Spanish, German, and French
+- [ ] Decide whether to tune zoom/crop offset after seeing new captured frames
+
 1. **Phone App**
    - [ ] Launch app, verify Settings screen loads
    - [ ] Configure AI provider (Gemini), test text chat
@@ -254,6 +303,7 @@ Unit and integration test suites are implemented for protocol, service, factory,
    - [ ] Pair phone with glasses via CXR SDK
    - [ ] Test voice command from glasses → AI response displayed
    - [ ] Test photo capture → AI analysis → result displayed
+   - [ ] Test live visual translation → English result displayed on glasses
 
 ### Running Instrumentation Tests
 
@@ -296,8 +346,9 @@ Unit and integration test suites are implemented for protocol, service, factory,
 **Q: Build fails with "API key not found"**
 
 ```
-A: Ensure local.properties exists and contains GEMINI_API_KEY.
-   Check the file is in project root, not in a module folder.
+A: Ensure local.properties or .env exists in the project root.
+   Supported Gemini key names include GEMINI_API_KEY, GoogleGeminiAPIKey,
+   GOOGLE_GEMINI_API_KEY, and GOOGLE_API_KEY.
 ```
 
 **Q: Gradle sync fails with version errors**
@@ -335,8 +386,16 @@ A: 1. Verify ROKID_CLIENT_SECRET is set (without hyphens)
 
 ```
 A: 1. Verify API key is valid and has quota
-   2. Check network connectivity
-   3. Review Logcat for API error responses
+   2. Check the in-app pipeline status bar
+   3. Check network connectivity
+   4. Review Logcat for API error responses
+```
+
+**Q: RokidApkUploader asks for an APK in /sdcard/Download, but there is no SD card**
+
+```
+A: /sdcard/Download is Android's legacy name for shared internal storage.
+   Use the Pixel's normal Downloads folder.
 ```
 
 ### Release Issues
