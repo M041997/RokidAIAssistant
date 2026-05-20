@@ -49,6 +49,7 @@ fun HomeScreen(
     currentModelId: String,
     visualTranslationSourceLanguage: String,
     isVisualTranslationActive: Boolean,
+    isAssistantConnectionRequested: Boolean,
     isSystemBluetoothGlassesConnected: Boolean,
     systemBluetoothGlassesName: String?,
     conversations: List<ConversationItem>,
@@ -100,7 +101,9 @@ fun HomeScreen(
                     title = stringResource(R.string.glasses_status),
                     value = when (connectionState) {
                         ConnectionState.CONNECTED -> connectedGlassesName ?: stringResource(R.string.connected)
-                        else -> if (isSystemBluetoothGlassesConnected) {
+                        else -> if (isAssistantConnectionRequested) {
+                            stringResource(R.string.assistant_channel_waiting)
+                        } else if (isSystemBluetoothGlassesConnected) {
                             stringResource(R.string.bluetooth_connected)
                         } else {
                             when (connectionState) {
@@ -115,7 +118,7 @@ fun HomeScreen(
                         ConnectionState.CONNECTED -> ExtendedTheme.colors.success
                         ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> MaterialTheme.colorScheme.tertiary
                         ConnectionState.ERROR -> MaterialTheme.colorScheme.error
-                        else -> if (isSystemBluetoothGlassesConnected) {
+                        else -> if (isSystemBluetoothGlassesConnected || isAssistantConnectionRequested) {
                             MaterialTheme.colorScheme.tertiary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -139,6 +142,7 @@ fun HomeScreen(
                 GlassesConnectionCard(
                     connectionState = connectionState,
                     glassesName = connectedGlassesName,
+                    isAssistantConnectionRequested = isAssistantConnectionRequested,
                     isSystemBluetoothGlassesConnected = isSystemBluetoothGlassesConnected,
                     systemBluetoothGlassesName = systemBluetoothGlassesName,
                     onConnect = onConnect,
@@ -444,6 +448,7 @@ private fun WelcomeHeader() {
 private fun GlassesConnectionCard(
     connectionState: ConnectionState,
     glassesName: String?,
+    isAssistantConnectionRequested: Boolean,
     isSystemBluetoothGlassesConnected: Boolean,
     systemBluetoothGlassesName: String?,
     onConnect: () -> Unit,
@@ -451,8 +456,9 @@ private fun GlassesConnectionCard(
 ) {
     val isConnected = connectionState == ConnectionState.CONNECTED
     val isBluetoothOnlyConnected = !isConnected && isSystemBluetoothGlassesConnected
-    val isConnecting = connectionState == ConnectionState.CONNECTING || 
-                       connectionState == ConnectionState.RECONNECTING
+    val isConnecting = connectionState == ConnectionState.CONNECTING ||
+        connectionState == ConnectionState.RECONNECTING ||
+        isAssistantConnectionRequested
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -525,7 +531,9 @@ private fun GlassesConnectionCard(
                         ConnectionState.CONNECTING -> stringResource(R.string.connecting)
                         ConnectionState.RECONNECTING -> stringResource(R.string.reconnecting)
                         ConnectionState.ERROR -> stringResource(R.string.connection_error)
-                        else -> if (isBluetoothOnlyConnected) {
+                        else -> if (isAssistantConnectionRequested) {
+                            stringResource(R.string.assistant_channel_waiting)
+                        } else if (isBluetoothOnlyConnected) {
                             stringResource(R.string.bluetooth_connected)
                         } else {
                             stringResource(R.string.disconnected)
@@ -545,7 +553,11 @@ private fun GlassesConnectionCard(
                 }
                 if (isBluetoothOnlyConnected) {
                     Text(
-                        text = stringResource(R.string.assistant_channel_waiting),
+                        text = if (isAssistantConnectionRequested) {
+                            stringResource(R.string.connecting)
+                        } else {
+                            stringResource(R.string.assistant_channel_waiting)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -249,6 +249,7 @@ fun PhoneMainScreen(
                     currentModelId = settings.aiModelId,
                     visualTranslationSourceLanguage = settings.visualTranslationSourceLanguage,
                     isVisualTranslationActive = uiState.isVisualTranslationActive,
+                    isAssistantConnectionRequested = uiState.isAssistantConnectionRequested,
                     isSystemBluetoothGlassesConnected = uiState.isSystemBluetoothGlassesConnected,
                     systemBluetoothGlassesName = uiState.systemBluetoothGlassesName,
                     conversations = uiState.conversations,

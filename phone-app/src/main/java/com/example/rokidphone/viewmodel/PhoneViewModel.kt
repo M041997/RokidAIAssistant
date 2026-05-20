@@ -36,6 +36,7 @@ data class PhoneUiState(
     val conversations: List<ConversationItem> = emptyList(),
     val isScanning: Boolean = false,
     val availableDevices: List<String> = emptyList(),
+    val isAssistantConnectionRequested: Boolean = false,
     val showApiKeyWarning: Boolean = false,  // Flag to show API key warning dialog
     val showInitialSetup: Boolean = false,   // Flag to show initial setup dialog (no API key configured)
     val latestPhotoPath: String? = null,     // Path to the latest received photo
@@ -84,7 +85,12 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                 
                 _uiState.update { it.copy(
                     bluetoothState = state,
-                    connectionState = connectionState
+                    connectionState = connectionState,
+                    isAssistantConnectionRequested = when (state) {
+                        BluetoothConnectionState.CONNECTED -> false
+                        BluetoothConnectionState.DISCONNECTED -> false
+                        else -> it.isAssistantConnectionRequested
+                    }
                 ) }
             }
         }
@@ -174,6 +180,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun startScanning() {
         viewModelScope.launch {
+            _uiState.update { it.copy(isAssistantConnectionRequested = true) }
             ServiceBridge.requestStartListening()
         }
     }
