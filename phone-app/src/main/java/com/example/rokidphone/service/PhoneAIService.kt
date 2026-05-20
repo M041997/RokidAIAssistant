@@ -944,6 +944,16 @@ class PhoneAIService : Service() {
                     return@launch
                 }
 
+                if (isNoVisualTranslationResult(cleanedResult, visualLanguage)) {
+                    updatePipeline(
+                        title = "Frame skipped",
+                        detail = "No readable matching text in this frame; keeping the last translation",
+                        progress = 0.75f,
+                        severity = ServiceBridge.PipelineSeverity.WORKING
+                    )
+                    return@launch
+                }
+
                 if (cleanedResult.isNotBlank() && cleanedResult != lastVisualTranslationText) {
                     lastVisualTranslationText = cleanedResult
                     updatePipeline(
@@ -970,6 +980,28 @@ class PhoneAIService : Service() {
                 isVisualTranslationFrameInFlight = false
             }
         }
+    }
+
+    private fun isNoVisualTranslationResult(result: String, sourceLanguageCode: String): Boolean {
+        if (result.isBlank()) return true
+
+        val normalized = result
+            .trim()
+            .trim('.', '!', '?')
+            .lowercase()
+
+        val expectedNoText = if (sourceLanguageCode == VisualTranslationLanguages.AUTO) {
+            "no translatable text visible"
+        } else {
+            "no ${VisualTranslationLanguages.displayName(sourceLanguageCode).lowercase()} text visible"
+        }
+
+        return normalized == expectedNoText ||
+            normalized == "no translatable text visible" ||
+            normalized.startsWith("no translatable text") ||
+            normalized.startsWith("no matching text") ||
+            normalized.startsWith("no readable text") ||
+            normalized.contains("text visible") && normalized.startsWith("no ")
     }
 
     private fun saveLatestVisualTranslationFrame(frameData: ByteArray) {
