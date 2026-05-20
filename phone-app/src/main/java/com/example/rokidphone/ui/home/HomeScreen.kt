@@ -48,6 +48,7 @@ fun HomeScreen(
     pipelineStatus: ServiceBridge.PipelineStatus,
     currentModelId: String,
     visualTranslationSourceLanguage: String,
+    isVisualTranslationActive: Boolean,
     conversations: List<ConversationItem>,
     recordingState: RecordingState = RecordingState.Idle,
     onConnect: () -> Unit,
@@ -143,7 +144,8 @@ fun HomeScreen(
                     onCaptureTranslationPhoto = onCaptureTranslationPhoto,
                     onStartVisualTranslation = onStartVisualTranslation,
                     onStopVisualTranslation = onStopVisualTranslation,
-                    visualTranslationSourceLanguage = visualTranslationSourceLanguage
+                    visualTranslationSourceLanguage = visualTranslationSourceLanguage,
+                    isVisualTranslationActive = isVisualTranslationActive
                 )
             }
         }
@@ -534,7 +536,8 @@ private fun CameraCaptureCard(
     onCaptureTranslationPhoto: () -> Unit,
     onStartVisualTranslation: () -> Unit,
     onStopVisualTranslation: () -> Unit,
-    visualTranslationSourceLanguage: String
+    visualTranslationSourceLanguage: String,
+    isVisualTranslationActive: Boolean
 ) {
     val visualLanguage = VisualTranslationLanguages.fromCode(visualTranslationSourceLanguage)
     val liveTitle = if (visualLanguage.code == VisualTranslationLanguages.AUTO) {
@@ -550,22 +553,29 @@ private fun CameraCaptureCard(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ActionCard(
-            icon = Icons.Default.Translate,
+            icon = if (isVisualTranslationActive) Icons.Default.StopCircle else Icons.Default.Translate,
             title = liveTitle,
-            subtitle = liveHint,
-            actionLabel = stringResource(R.string.start),
-            onAction = onStartVisualTranslation,
-            iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            iconColor = MaterialTheme.colorScheme.onTertiaryContainer
-        )
-        ActionCard(
-            icon = Icons.Default.StopCircle,
-            title = stringResource(R.string.stop_visual_translation),
-            subtitle = stringResource(R.string.stop_visual_translation_hint),
-            actionLabel = stringResource(R.string.stop),
-            onAction = onStopVisualTranslation,
-            iconContainerColor = MaterialTheme.colorScheme.errorContainer,
-            iconColor = MaterialTheme.colorScheme.onErrorContainer
+            subtitle = if (isVisualTranslationActive) {
+                stringResource(R.string.stop_visual_translation_hint)
+            } else {
+                liveHint
+            },
+            actionLabel = if (isVisualTranslationActive) {
+                stringResource(R.string.stop)
+            } else {
+                stringResource(R.string.start)
+            },
+            onAction = if (isVisualTranslationActive) onStopVisualTranslation else onStartVisualTranslation,
+            iconContainerColor = if (isVisualTranslationActive) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.tertiaryContainer
+            },
+            iconColor = if (isVisualTranslationActive) {
+                MaterialTheme.colorScheme.onErrorContainer
+            } else {
+                MaterialTheme.colorScheme.onTertiaryContainer
+            }
         )
         ActionCard(
             icon = Icons.Default.CameraAlt,

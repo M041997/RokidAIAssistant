@@ -225,6 +225,7 @@ class PhoneAIService : Service() {
         
         // Notify UI service has stopped (immediate state update)
         ServiceBridge.updateServiceState(false)
+        ServiceBridge.updateVisualTranslationActive(false)
         
         serviceScope.cancel()
         liveSession?.release()
@@ -882,6 +883,7 @@ class PhoneAIService : Service() {
             severity = ServiceBridge.PipelineSeverity.WORKING
         )
         isVisualTranslationActive = true
+        ServiceBridge.updateVisualTranslationActive(true)
         lastVisualTranslationFrameMs = 0L
         lastVisualTranslationText = ""
         bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_START))
@@ -897,6 +899,7 @@ class PhoneAIService : Service() {
             severity = ServiceBridge.PipelineSeverity.IDLE
         )
         isVisualTranslationActive = false
+        ServiceBridge.updateVisualTranslationActive(false)
         isVisualTranslationFrameInFlight = false
         bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_END))
     }
@@ -934,6 +937,7 @@ class PhoneAIService : Service() {
                         severity = ServiceBridge.PipelineSeverity.ERROR
                     )
                     isVisualTranslationActive = false
+                    ServiceBridge.updateVisualTranslationActive(false)
                     bluetoothManager?.sendMessage(Message.aiError("Gemini API key invalid. Rebuild from .env or update Settings."))
                     bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_END))
                     return@launch

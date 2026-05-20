@@ -51,6 +51,10 @@ object ServiceBridge {
     // Connected device name
     private val _connectedDeviceNameFlow = MutableStateFlow<String?>(null)
     val connectedDeviceNameFlow: StateFlow<String?> = _connectedDeviceNameFlow.asStateFlow()
+
+    // Live visual translation state
+    private val _visualTranslationActiveFlow = MutableStateFlow(false)
+    val visualTranslationActiveFlow: StateFlow<Boolean> = _visualTranslationActiveFlow.asStateFlow()
     
     // API Key missing notification
     private val _apiKeyMissingFlow = MutableSharedFlow<Unit>(replay = 0)
@@ -181,6 +185,11 @@ object ServiceBridge {
     fun updateConnectedDeviceName(name: String?) {
         Log.d(TAG, "Updating connected device name: $name")
         _connectedDeviceNameFlow.value = name
+    }
+
+    fun updateVisualTranslationActive(isActive: Boolean) {
+        Log.d(TAG, "Updating visual translation active: $isActive")
+        _visualTranslationActiveFlow.value = isActive
     }
 
     /**

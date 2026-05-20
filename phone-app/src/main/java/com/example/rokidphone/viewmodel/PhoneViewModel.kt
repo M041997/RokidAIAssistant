@@ -33,7 +33,8 @@ data class PhoneUiState(
     val showInitialSetup: Boolean = false,   // Flag to show initial setup dialog (no API key configured)
     val latestPhotoPath: String? = null,     // Path to the latest received photo
     val recordingState: RecordingState = RecordingState.Idle,  // Recording state
-    val pipelineStatus: ServiceBridge.PipelineStatus = ServiceBridge.PipelineStatus()
+    val pipelineStatus: ServiceBridge.PipelineStatus = ServiceBridge.PipelineStatus(),
+    val isVisualTranslationActive: Boolean = false
 )
 
 class PhoneViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,6 +107,13 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             ServiceBridge.pipelineStatusFlow.collect { status ->
                 _uiState.update { it.copy(pipelineStatus = status) }
+            }
+        }
+
+        // Listen to live visual translation state
+        viewModelScope.launch {
+            ServiceBridge.visualTranslationActiveFlow.collect { isActive ->
+                _uiState.update { it.copy(isVisualTranslationActive = isActive) }
             }
         }
         

@@ -20,6 +20,7 @@ Current working state:
 - Glasses audio recordings now process successfully through STT and AI response generation.
 - Live visual translation works for Japanese to English.
 - Live visual translation now supports source-language auto-detect to English, plus explicit choices such as Japanese, Spanish, German, and French.
+- The Home screen uses one live translation toggle button: start when inactive, stop when active.
 - Local/custom OpenAI-compatible vision models are enabled as a future option. A local Qwen3 VL server can be tested later as a fallback or fast path.
 - Glasses live visual translation frames now use a centered `2x` zoom crop before being sent to the phone.
 
@@ -282,6 +283,7 @@ Current checkpoint:
 - [x] Glasses audio recording processes through STT and AI response
 - [x] Live Japanese to English visual translation works
 - [x] Auto-detect visual translation mode is implemented
+- [x] Live visual translation start/stop is a single toggle control
 - [x] Glasses APK with `2x` live-frame zoom is built and staged on the phone
 - [ ] Re-upload staged glasses APK with RokidApkUploader
 - [ ] Validate `2x` zoom framing in live visual translation

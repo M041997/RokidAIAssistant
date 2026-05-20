@@ -248,6 +248,7 @@ fun PhoneMainScreen(
                     pipelineStatus = uiState.pipelineStatus,
                     currentModelId = settings.aiModelId,
                     visualTranslationSourceLanguage = settings.visualTranslationSourceLanguage,
+                    isVisualTranslationActive = uiState.isVisualTranslationActive,
                     conversations = uiState.conversations,
                     recordingState = uiState.recordingState,
                     onConnect = { viewModel.startScanning() },
