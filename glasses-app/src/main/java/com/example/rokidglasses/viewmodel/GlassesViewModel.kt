@@ -138,7 +138,7 @@ class GlassesViewModel(
     private val visualTranslationFrameZoom = 2.0f
 
     // Rokid camera frames arrive in sensor orientation, which is sideways relative to the wearer view.
-    private val visualTranslationFrameRotationDegrees = 270
+    private val visualTranslationFrameRotationDegrees = 180
     
     init {
         initializeBluetooth()
