@@ -56,6 +56,7 @@ class PhoneAIService : Service() {
     companion object {
         private const val TAG = "PhoneAIService"
         private const val VISUAL_TRANSLATION_FRAME_INTERVAL_MS = 3000L
+        private const val VISUAL_TRANSLATION_RESULT_HOLD_MS = 12000L
     }
 
     private enum class PhotoAnalysisMode {
@@ -106,6 +107,8 @@ class PhoneAIService : Service() {
     private var isVisualTranslationFrameInFlight = false
     private var lastVisualTranslationFrameMs = 0L
     private var lastVisualTranslationText = ""
+    private var lastVisualTranslationNormalizedText = ""
+    private var lastVisualTranslationSuccessMs = 0L
 
     private fun updatePipeline(
         title: String,
@@ -906,6 +909,10 @@ class PhoneAIService : Service() {
 
     private fun handleVisualTranslationFrame(frameData: ByteArray) {
         val now = System.currentTimeMillis()
+        if (lastVisualTranslationSuccessMs > 0 && now - lastVisualTranslationSuccessMs < VISUAL_TRANSLATION_RESULT_HOLD_MS) {
+            return
+        }
+
         if (isVisualTranslationFrameInFlight || now - lastVisualTranslationFrameMs < VISUAL_TRANSLATION_FRAME_INTERVAL_MS) {
             return
         }
@@ -954,8 +961,22 @@ class PhoneAIService : Service() {
                     return@launch
                 }
 
-                if (cleanedResult.isNotBlank() && cleanedResult != lastVisualTranslationText) {
+                val normalizedResult = normalizeVisualTranslationText(cleanedResult)
+                if (normalizedResult.isNotBlank() && normalizedResult == lastVisualTranslationNormalizedText) {
+                    lastVisualTranslationSuccessMs = System.currentTimeMillis()
+                    updatePipeline(
+                        title = "Translation held",
+                        detail = "Same text still visible; keeping the current translation",
+                        progress = 1f,
+                        severity = ServiceBridge.PipelineSeverity.SUCCESS
+                    )
+                    return@launch
+                }
+
+                if (cleanedResult.isNotBlank()) {
                     lastVisualTranslationText = cleanedResult
+                    lastVisualTranslationNormalizedText = normalizedResult
+                    lastVisualTranslationSuccessMs = System.currentTimeMillis()
                     updatePipeline(
                         title = "Translation updated",
                         detail = cleanedResult.take(120),
@@ -980,6 +1001,14 @@ class PhoneAIService : Service() {
                 isVisualTranslationFrameInFlight = false
             }
         }
+    }
+
+    private fun normalizeVisualTranslationText(text: String): String {
+        return text
+            .lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
     }
 
     private fun isNoVisualTranslationResult(result: String, sourceLanguageCode: String): Boolean {
