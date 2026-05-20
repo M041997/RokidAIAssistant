@@ -18,27 +18,29 @@ Current working state:
 - Phone app is installed and using the Gemini key from `.env` / build config by default.
 - In-app pipeline status reports whether the Gemini key is missing, checking, valid, or rejected.
 - Glasses audio recordings now process successfully through STT and AI response generation.
-- Live visual translation works for Japanese to English.
+- Live visual translation works for Japanese and Spanish to English when the frame is readable.
 - Live visual translation now supports source-language auto-detect to English, plus explicit choices such as Japanese, Spanish, German, and French.
 - The Home screen uses one live translation toggle button: start when inactive, stop when active.
-- Local/custom OpenAI-compatible vision models are enabled as a future option. A local Qwen3 VL server can be tested later as a fallback or fast path.
+- Local/custom OpenAI-compatible vision models are enabled and tested with a local Qwen3 VL server over Tailscale.
+- Custom/Qwen mode stays selected instead of falling back to Gemini, supports local HTTP, and uses a placeholder `local` API key when needed.
 - Glasses live visual translation frames now use a centered `2x` zoom crop before being sent to the phone.
+- Live visual translation skips unreadable frames, waits for the view to settle, avoids repeat calls on similar frames, and holds successful translations with a `20s` reading timer.
 
 What we are testing next:
 
-1. Re-upload the staged glasses APK with RokidApkUploader:
-   `Downloads/glasses-app-debug.apk`
-2. Start `Live translate to English` with visual translation language set to `Auto-detect`.
-3. Verify the new `2x` zoom crop better matches the user's view through the glasses.
-4. Test Japanese, Spanish, German, and French text into English.
-5. Watch the in-app status bar for key/provider/frame/translation state.
+1. Start `Live translate to English` with visual translation language set to `Auto-detect`.
+2. Test Gemini and Custom/Qwen against the same clear Spanish/Japanese paragraph.
+3. Confirm Custom/Qwen translates once, then shows the `20s` reading timer without repeated API calls.
+4. Pull the latest diagnostic frame if Qwen skips too many frames.
+5. Tune visual frame orientation/brightness/crop if the diagnostic frame is still sideways or too dark.
 
 Notes:
 
 - The phone APK is already installed for the current checkpoint.
-- The glasses APK must be uploaded again before the `2x` zoom behavior is active on the glasses.
+- The glasses APK with the current `2x` zoom and rotation behavior has been uploaded during testing.
 - `/sdcard/Download/...` means the Pixel's internal Downloads folder, not a physical SD card.
 - The current experience is live translation text on the glasses, not yet a Google Translate-style spatial text replacement overlay.
+- Local Qwen test URL: `http://100.114.53.77:11440/v1` with model `qwen3` / `qwen3GGUF_moe`; Pixel must be connected to Tailscale.
 
 ---
 
@@ -285,10 +287,13 @@ Current checkpoint:
 - [x] Auto-detect visual translation mode is implemented
 - [x] Live visual translation start/stop is a single toggle control
 - [x] Glasses APK with `2x` live-frame zoom is built and staged on the phone
-- [ ] Re-upload staged glasses APK with RokidApkUploader
-- [ ] Validate `2x` zoom framing in live visual translation
-- [ ] Test auto-detect translation on Japanese, Spanish, German, and French
-- [ ] Decide whether to tune zoom/crop offset after seeing new captured frames
+- [x] Re-upload staged glasses APK with RokidApkUploader
+- [x] Custom/Qwen OpenAI-compatible vision provider connects over Tailscale
+- [x] Custom/Qwen live visual translation path calls the local server instead of Gemini
+- [x] Live visual translation has stable-frame gating and a `20s` reading timer
+- [ ] Validate live-frame orientation and readability under normal wearing conditions
+- [ ] Test auto-detect translation on Japanese, Spanish, German, and French across Gemini and Qwen
+- [ ] Decide whether to tune zoom/crop/rotation after seeing new captured frames
 
 1. **Phone App**
    - [ ] Launch app, verify Settings screen loads
