@@ -57,7 +57,7 @@ class PhoneAIService : Service() {
     companion object {
         private const val TAG = "PhoneAIService"
         private const val VISUAL_TRANSLATION_FRAME_INTERVAL_MS = 3000L
-        private const val VISUAL_TRANSLATION_RESULT_HOLD_MS = 12000L
+        private const val VISUAL_TRANSLATION_RESULT_HOLD_MS = 20000L
         private const val VISUAL_TRANSLATION_VIEW_SETTLE_MS = 2500L
         private const val VISUAL_TRANSLATION_FRAME_HASH_SIMILAR_BITS = 8
     }
@@ -921,6 +921,14 @@ class PhoneAIService : Service() {
     private fun handleVisualTranslationFrame(frameData: ByteArray) {
         val now = System.currentTimeMillis()
         if (lastVisualTranslationSuccessMs > 0 && now - lastVisualTranslationSuccessMs < VISUAL_TRANSLATION_RESULT_HOLD_MS) {
+            val remainingSeconds = ((VISUAL_TRANSLATION_RESULT_HOLD_MS - (now - lastVisualTranslationSuccessMs)) / 1000L)
+                .coerceAtLeast(1L)
+            updatePipeline(
+                title = "Reading timer",
+                detail = "Holding translation for ${remainingSeconds}s before the next API call",
+                progress = remainingSeconds.toFloat() / (VISUAL_TRANSLATION_RESULT_HOLD_MS / 1000f),
+                severity = ServiceBridge.PipelineSeverity.SUCCESS
+            )
             return
         }
 
