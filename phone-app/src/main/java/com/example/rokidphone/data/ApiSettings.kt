@@ -144,12 +144,12 @@ enum class AiProvider(
     ),
     CUSTOM(
         displayNameResId = R.string.provider_custom,
-        description = "OpenAI-compatible API (Ollama, LM Studio, etc.)",
+        description = "OpenAI-compatible API (Ollama, LM Studio, llama.cpp, etc.)",
         website = "",
         defaultBaseUrl = "http://localhost:11434/v1/",
         isOpenAiCompatible = true,
         supportsSpeech = false,
-        supportsVision = false
+        supportsVision = true
     );
     
     companion object {
@@ -617,6 +617,14 @@ object AvailableModels {
             supportsAudio = false,
             supportsVision = false,
             description = "Local Llama 4 model via Ollama"
+        ),
+        ModelOption(
+            id = "qwen3",
+            displayName = "Qwen3 VL (llama.cpp)",
+            provider = AiProvider.CUSTOM,
+            supportsAudio = false,
+            supportsVision = true,
+            description = "Local Qwen3 vision-language model via an OpenAI-compatible llama.cpp server"
         ),
         ModelOption(
             id = "deepseek-r1",
