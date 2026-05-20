@@ -1,5 +1,6 @@
 package com.example.rokidphone.ui.recording
 
+import android.media.MediaPlayer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -38,6 +39,15 @@ fun RecordingDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(recording?.id) {
+        onDispose {
+            mediaPlayer?.release()
+            mediaPlayer = null
+            isPlaying = false
+        }
+    }
     
     // Load recording
     LaunchedEffect(recordingId) {
@@ -104,7 +114,30 @@ fun RecordingDetailScreen(
                     recording = rec,
                     isPlaying = isPlaying,
                     formatDuration = { viewModel.formatDuration(it) },
-                    onPlayPause = { isPlaying = !isPlaying },
+                    onPlayPause = {
+                        val player = mediaPlayer
+                        if (isPlaying) {
+                            player?.pause()
+                            isPlaying = false
+                        } else {
+                            try {
+                                val nextPlayer = player ?: MediaPlayer().apply {
+                                    setDataSource(rec.filePath)
+                                    setOnCompletionListener {
+                                        isPlaying = false
+                                        seekTo(0)
+                                    }
+                                    prepare()
+                                }.also { mediaPlayer = it }
+                                nextPlayer.start()
+                                isPlaying = true
+                            } catch (_: Exception) {
+                                mediaPlayer?.release()
+                                mediaPlayer = null
+                                isPlaying = false
+                            }
+                        }
+                    },
                     modifier = Modifier.padding(16.dp)
                 )
                 

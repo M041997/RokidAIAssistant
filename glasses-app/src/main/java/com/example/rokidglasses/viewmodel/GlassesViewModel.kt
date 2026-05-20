@@ -325,11 +325,11 @@ class GlassesViewModel(
                 }
                 
                 audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
                     Constants.AUDIO_SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
-                    bufferSize
+                    bufferSize * 2
                 )
                 
                 // Verify AudioRecord was initialized successfully
@@ -398,7 +398,7 @@ class GlassesViewModel(
             hintText = context.getString(R.string.please_wait)
         ) }
         
-        recordingJob?.cancel()
+        val jobToStop = recordingJob
         recordingJob = null
         
         Log.d(TAG, "Stop recording, sending audio to phone")
@@ -406,6 +406,10 @@ class GlassesViewModel(
         // Send audio via Bluetooth to phone for processing
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                withTimeoutOrNull(1000) {
+                    jobToStop?.join()
+                }
+
                 // Get recording data
                 val audioData: ByteArray
                 synchronized(audioBuffer) {

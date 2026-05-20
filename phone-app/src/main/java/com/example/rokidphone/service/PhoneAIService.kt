@@ -711,6 +711,13 @@ class PhoneAIService : Service() {
      */
     private suspend fun processVoiceData(audioData: ByteArray) {
         try {
+            val recording = try {
+                recordingRepository?.saveGlassesRecording(audioData = audioData)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save raw glasses recording", e)
+                null
+            }
+
             // Check if any speech service is available
             if (sttService == null && speechService == null) {
                 Log.e(TAG, "Speech service not available - no API key configured")
@@ -801,16 +808,27 @@ class PhoneAIService : Service() {
             // 6.1 Save AI response to database for history
             saveAssistantMessage(aiResponse, settings.aiModelId)
             
-            // 6.2 Save glasses recording to database (with transcript and AI response)
+            // 6.2 Update saved glasses recording with transcript and AI response
             try {
-                recordingRepository?.saveGlassesRecording(
-                    audioData = audioData,
-                    transcript = transcript,
-                    aiResponse = aiResponse,
-                    providerId = settings.aiProvider.name,
-                    modelId = settings.aiModelId
-                )
-                Log.d(TAG, "Glasses recording saved to database")
+                if (recording != null) {
+                    recordingRepository?.updateTranscriptAndAiResponse(
+                        id = recording.id,
+                        transcript = transcript,
+                        aiResponse = aiResponse,
+                        providerId = settings.aiProvider.name,
+                        modelId = settings.aiModelId
+                    )
+                    Log.d(TAG, "Glasses recording updated with transcript and AI response")
+                } else {
+                    recordingRepository?.saveGlassesRecording(
+                        audioData = audioData,
+                        transcript = transcript,
+                        aiResponse = aiResponse,
+                        providerId = settings.aiProvider.name,
+                        modelId = settings.aiModelId
+                    )
+                    Log.d(TAG, "Glasses recording saved to database")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save glasses recording", e)
             }

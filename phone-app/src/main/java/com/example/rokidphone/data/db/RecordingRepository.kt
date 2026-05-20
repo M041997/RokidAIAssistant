@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,10 +36,11 @@ sealed class RecordingState {
  */
 class RecordingRepository private constructor(
     private val context: Context,
-    private val scope: CoroutineScope
+    @Suppress("UNUSED_PARAMETER") scope: CoroutineScope
 ) {
     private val recordingDao = AppDatabase.getInstance(context).recordingDao()
     private val recordingsDir = File(context.filesDir, "recordings").apply { mkdirs() }
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     
     // Recording state
     private val _recordingState = MutableStateFlow<RecordingState>(RecordingState.Idle)
@@ -310,7 +312,7 @@ class RecordingRepository private constructor(
     
     private fun startDurationUpdate() {
         durationUpdateJob?.cancel()
-        durationUpdateJob = scope.launch {
+        durationUpdateJob = repositoryScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(100)
                 val state = _recordingState.value
@@ -462,6 +464,16 @@ class RecordingRepository private constructor(
      */
     suspend fun updateAiResponse(id: String, response: String, providerId: String?, modelId: String?) {
         recordingDao.updateAiResponse(id, response, providerId, modelId)
+    }
+
+    suspend fun updateTranscriptAndAiResponse(
+        id: String,
+        transcript: String,
+        aiResponse: String,
+        providerId: String?,
+        modelId: String?
+    ) {
+        recordingDao.updateTranscriptAndAiResponse(id, transcript, aiResponse, providerId, modelId)
     }
     
     /**

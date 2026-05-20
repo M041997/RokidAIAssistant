@@ -150,6 +150,19 @@ interface RecordingDao {
         transcribedAt: Long = System.currentTimeMillis(),
         updatedAt: Long = System.currentTimeMillis()
     )
+
+    @Query("UPDATE recordings SET transcript = :transcript, ai_response = :aiResponse, provider_id = :providerId, model_id = :modelId, status = :status, transcribed_at = :transcribedAt, analyzed_at = :analyzedAt, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateTranscriptAndAiResponse(
+        id: String,
+        transcript: String,
+        aiResponse: String,
+        providerId: String?,
+        modelId: String?,
+        status: RecordingStatus = RecordingStatus.ANALYZED,
+        transcribedAt: Long = System.currentTimeMillis(),
+        analyzedAt: Long = System.currentTimeMillis(),
+        updatedAt: Long = System.currentTimeMillis()
+    )
     
     @Query("UPDATE recordings SET ai_response = :aiResponse, provider_id = :providerId, model_id = :modelId, status = :status, analyzed_at = :analyzedAt, updated_at = :updatedAt WHERE id = :id")
     suspend fun updateAiResponse(
