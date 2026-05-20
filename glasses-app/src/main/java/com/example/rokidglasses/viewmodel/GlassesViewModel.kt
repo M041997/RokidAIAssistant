@@ -135,7 +135,7 @@ class GlassesViewModel(
     private val videoFrameQuality = 50
 
     // Live translation should match the user's central field of view, not the full wide camera frame.
-    private val visualTranslationFrameZoom = 1.35f
+    private val visualTranslationFrameZoom = 2.0f
     
     init {
         initializeBluetooth()
