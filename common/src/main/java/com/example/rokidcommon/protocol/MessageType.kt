@@ -46,6 +46,8 @@ enum class MessageType(val code: Int) {
     LIVE_SESSION_END(0x51),      // Phone -> Glasses: Live session ended
     LIVE_TRANSCRIPTION(0x52),    // Bidirectional: Real-time transcription
     VIDEO_FRAME(0x53),           // Glasses -> Phone: Video frame for Live mode
+    VISUAL_TRANSLATION_START(0x54), // Phone -> Glasses: Start continuous visual translation frames
+    VISUAL_TRANSLATION_END(0x55),   // Phone -> Glasses: Stop continuous visual translation frames
     
     // System control (0xF0-0xFF)
     SYSTEM_STATUS(0xF0),         // Bidirectional: System status

@@ -80,12 +80,44 @@ object ServiceBridge {
     // Capture photo request from UI
     private val _capturePhotoFlow = MutableSharedFlow<Unit>(replay = 0)
     val capturePhotoFlow: SharedFlow<Unit> = _capturePhotoFlow.asSharedFlow()
+
+    // Capture photo request for visual translation from UI
+    private val _captureTranslationPhotoFlow = MutableSharedFlow<Unit>(replay = 0)
+    val captureTranslationPhotoFlow: SharedFlow<Unit> = _captureTranslationPhotoFlow.asSharedFlow()
+
+    // Continuous visual translation control from UI
+    private val _startVisualTranslationFlow = MutableSharedFlow<Unit>(replay = 0)
+    val startVisualTranslationFlow: SharedFlow<Unit> = _startVisualTranslationFlow.asSharedFlow()
+
+    private val _stopVisualTranslationFlow = MutableSharedFlow<Unit>(replay = 0)
+    val stopVisualTranslationFlow: SharedFlow<Unit> = _stopVisualTranslationFlow.asSharedFlow()
     
     /**
      * Request glasses to capture photo (called by UI/ViewModel)
      */
     suspend fun requestCapturePhoto() {
         _capturePhotoFlow.emit(Unit)
+    }
+
+    /**
+     * Request glasses to capture photo for visual text translation.
+     */
+    suspend fun requestCaptureTranslationPhoto() {
+        _captureTranslationPhotoFlow.emit(Unit)
+    }
+
+    /**
+     * Start continuous visual translation from glasses camera frames.
+     */
+    suspend fun requestStartVisualTranslation() {
+        _startVisualTranslationFlow.emit(Unit)
+    }
+
+    /**
+     * Stop continuous visual translation.
+     */
+    suspend fun requestStopVisualTranslation() {
+        _stopVisualTranslationFlow.emit(Unit)
     }
     
     /**

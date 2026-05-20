@@ -200,6 +200,33 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
             ServiceBridge.requestCapturePhoto()
         }
     }
+
+    /**
+     * Request glasses to capture and translate visible text
+     */
+    fun requestCaptureTranslationPhoto() {
+        viewModelScope.launch {
+            ServiceBridge.requestCaptureTranslationPhoto()
+        }
+    }
+
+    /**
+     * Start continuous visual translation
+     */
+    fun startVisualTranslation() {
+        viewModelScope.launch {
+            ServiceBridge.requestStartVisualTranslation()
+        }
+    }
+
+    /**
+     * Stop continuous visual translation
+     */
+    fun stopVisualTranslation() {
+        viewModelScope.launch {
+            ServiceBridge.requestStopVisualTranslation()
+        }
+    }
     
     // ==================== Recording Control ====================
     

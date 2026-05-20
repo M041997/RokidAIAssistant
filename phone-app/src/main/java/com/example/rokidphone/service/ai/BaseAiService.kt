@@ -103,6 +103,37 @@ abstract class BaseAiService(
         
         return output.toByteArray()
     }
+
+    /**
+     * Normalize signed 16-bit little-endian PCM to improve speech recognition on
+     * quiet microphone captures without clipping already-loud recordings.
+     */
+    protected fun normalizePcm16Le(pcmData: ByteArray, targetPeak: Int = 20000): ByteArray {
+        if (pcmData.size < 2) return pcmData
+
+        var peak = 0
+        var i = 0
+        while (i + 1 < pcmData.size) {
+            val sample = ((pcmData[i + 1].toInt() shl 8) or (pcmData[i].toInt() and 0xFF)).toShort().toInt()
+            peak = maxOf(peak, kotlin.math.abs(sample))
+            i += 2
+        }
+
+        if (peak < 32 || peak >= targetPeak) return pcmData
+
+        val gain = targetPeak.toFloat() / peak.toFloat()
+        val normalized = ByteArray(pcmData.size)
+        i = 0
+        while (i + 1 < pcmData.size) {
+            val sample = ((pcmData[i + 1].toInt() shl 8) or (pcmData[i].toInt() and 0xFF)).toShort().toInt()
+            val amplified = (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            normalized[i] = (amplified and 0xFF).toByte()
+            normalized[i + 1] = ((amplified shr 8) and 0xFF).toByte()
+            i += 2
+        }
+
+        return normalized
+    }
     
     private fun intToBytes(value: Int, numBytes: Int): ByteArray {
         val bytes = ByteArray(numBytes)

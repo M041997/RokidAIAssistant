@@ -51,6 +51,17 @@ class PhoneAIService : Service() {
     
     companion object {
         private const val TAG = "PhoneAIService"
+        private const val VISUAL_TRANSLATION_FRAME_INTERVAL_MS = 3000L
+        private const val VISUAL_TRANSLATION_PROMPT =
+            "Read any visible Japanese text in this image and translate it into natural English. " +
+                "Return only the English translation for the glasses display. " +
+                "If there are multiple signs or lines, keep the same order and use short line breaks. " +
+                "If no Japanese text is visible, say: No Japanese text visible."
+    }
+
+    private enum class PhotoAnalysisMode {
+        DESCRIPTION,
+        VISUAL_TRANSLATION
     }
     
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -90,6 +101,12 @@ class PhoneAIService : Service() {
     
     // Track recording IDs currently being processed to prevent duplicate transcription
     private val processingRecordingIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private var nextPhotoAnalysisMode: PhotoAnalysisMode = PhotoAnalysisMode.DESCRIPTION
+    private var isVisualTranslationActive = false
+    private var isVisualTranslationFrameInFlight = false
+    private var lastVisualTranslationFrameMs = 0L
+    private var lastVisualTranslationText = ""
     
     private val _messageFlow = MutableSharedFlow<Message>()
     val messageFlow = _messageFlow.asSharedFlow()
@@ -282,7 +299,29 @@ class PhoneAIService : Service() {
         serviceScope.launch {
             ServiceBridge.capturePhotoFlow.collect {
                 Log.d(TAG, "Capture photo request from UI")
+                nextPhotoAnalysisMode = PhotoAnalysisMode.DESCRIPTION
                 requestGlassesToCapturePhoto()
+            }
+        }
+
+        // Listen for visual translation capture requests from UI
+        serviceScope.launch {
+            ServiceBridge.captureTranslationPhotoFlow.collect {
+                Log.d(TAG, "Visual translation photo request from UI")
+                nextPhotoAnalysisMode = PhotoAnalysisMode.VISUAL_TRANSLATION
+                requestGlassesToCapturePhoto()
+            }
+        }
+
+        serviceScope.launch {
+            ServiceBridge.startVisualTranslationFlow.collect {
+                startVisualTranslation()
+            }
+        }
+
+        serviceScope.launch {
+            ServiceBridge.stopVisualTranslationFlow.collect {
+                stopVisualTranslation()
             }
         }
         
@@ -572,7 +611,9 @@ class PhoneAIService : Service() {
             // Receive real-time video frames from glasses and forward to Gemini Live Session
             MessageType.VIDEO_FRAME -> {
                 message.binaryData?.let { frameData ->
-                    if (liveSession != null && liveSession?.sessionState?.value == GeminiLiveSession.SessionState.ACTIVE) {
+                    if (isVisualTranslationActive) {
+                        handleVisualTranslationFrame(frameData)
+                    } else if (liveSession != null && liveSession?.sessionState?.value == GeminiLiveSession.SessionState.ACTIVE) {
                         Log.d(TAG, "Forwarding video frame to Live session: ${frameData.size} bytes")
                         liveSession?.sendVideoFrame(frameData)
                     } else {
@@ -668,11 +709,18 @@ class PhoneAIService : Service() {
                 type = MessageType.AI_PROCESSING,
                 payload = getString(R.string.analyzing_photo)
             ))
+
+            val analysisMode = nextPhotoAnalysisMode
+            nextPhotoAnalysisMode = PhotoAnalysisMode.DESCRIPTION
+            val prompt = when (analysisMode) {
+                PhotoAnalysisMode.DESCRIPTION -> getString(R.string.image_analysis_prompt)
+                PhotoAnalysisMode.VISUAL_TRANSLATION -> VISUAL_TRANSLATION_PROMPT
+            }
             
-            // Use AI service to analyze the image with localized prompt
+            // Use AI service to analyze the image with the selected prompt
             val analysisResult = aiService?.analyzeImage(
                 photoBytes, 
-                getString(R.string.image_analysis_prompt)
+                prompt
             ) ?: getString(R.string.ai_analysis_unavailable)
             
             // Clean markdown for glasses display
@@ -703,6 +751,68 @@ class PhoneAIService : Service() {
             bluetoothManager?.sendMessage(Message.aiError(
                 getString(R.string.photo_analysis_failed, e.message ?: "")
             ))
+        }
+    }
+
+    private suspend fun startVisualTranslation() {
+        if (bluetoothManager?.connectionState?.value != BluetoothConnectionState.CONNECTED) {
+            Log.w(TAG, "Cannot start visual translation: not connected to glasses")
+            return
+        }
+
+        val settingsRepository = SettingsRepository.getInstance(this)
+        val apiKey = settingsRepository.getSettings().geminiApiKey
+        if (apiKey.isBlank()) {
+            Log.e(TAG, "API key is not configured, aborting visual translation")
+            notifyApiKeyMissing()
+            bluetoothManager?.sendMessage(Message.aiError("API key not configured. Please set up an API key in Settings."))
+            return
+        }
+
+        Log.d(TAG, "Starting continuous visual translation")
+        isVisualTranslationActive = true
+        lastVisualTranslationFrameMs = 0L
+        lastVisualTranslationText = ""
+        bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_START))
+        bluetoothManager?.sendMessage(Message.aiProcessing("Live visual translation active"))
+    }
+
+    private suspend fun stopVisualTranslation() {
+        Log.d(TAG, "Stopping continuous visual translation")
+        isVisualTranslationActive = false
+        isVisualTranslationFrameInFlight = false
+        bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_END))
+    }
+
+    private fun handleVisualTranslationFrame(frameData: ByteArray) {
+        val now = System.currentTimeMillis()
+        if (isVisualTranslationFrameInFlight || now - lastVisualTranslationFrameMs < VISUAL_TRANSLATION_FRAME_INTERVAL_MS) {
+            return
+        }
+
+        lastVisualTranslationFrameMs = now
+        isVisualTranslationFrameInFlight = true
+
+        serviceScope.launch {
+            try {
+                Log.d(TAG, "Analyzing visual translation frame: ${frameData.size} bytes")
+                val result = aiService?.analyzeImage(frameData, VISUAL_TRANSLATION_PROMPT)
+                    ?: getString(R.string.ai_analysis_unavailable)
+                val cleanedResult = cleanMarkdown(result)
+
+                if (cleanedResult.isNotBlank() && cleanedResult != lastVisualTranslationText) {
+                    lastVisualTranslationText = cleanedResult
+                    bluetoothManager?.sendMessage(Message.aiResponseText(cleanedResult))
+                    ServiceBridge.emitConversation(Message(
+                        type = MessageType.AI_RESPONSE_TEXT,
+                        payload = cleanedResult
+                    ))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Visual translation frame failed", e)
+            } finally {
+                isVisualTranslationFrameInFlight = false
+            }
         }
     }
     

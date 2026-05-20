@@ -78,6 +78,7 @@ class GlassesViewModel(
         // Max characters per page for glasses display
         private const val MAX_CHARS_PER_PAGE = 120
         private const val MAX_LINES_PER_PAGE = 4
+        private const val AUDIO_DIAGNOSTIC_INTERVAL_MS = 1000L
     }
     
     private val _uiState = MutableStateFlow(GlassesUiState(
@@ -109,11 +110,20 @@ class GlassesViewModel(
     
     // Audio buffer - collects recording data
     private val audioBuffer = ByteArrayOutputStream()
+
+    private data class AudioRecordSetup(
+        val audioRecord: AudioRecord,
+        val source: Int,
+        val sourceName: String
+    )
     
     // ========== Gemini Live Mode Related ==========
     
     // Live mode activation status (notified by phone)
     private var isLiveModeActive = false
+
+    // Continuous visual translation mode activation status (notified by phone)
+    private var isVisualTranslationActive = false
     
     // Real-time video streaming job (~1fps camera frame capture and send to phone)
     private var videoStreamingJob: Job? = null
@@ -253,6 +263,73 @@ class GlassesViewModel(
     fun disconnectBluetooth() {
         bluetoothClient.disconnect()
     }
+
+    private fun createAudioRecord(bufferSizeBytes: Int): AudioRecordSetup? {
+        val candidateSources = listOf(
+            MediaRecorder.AudioSource.CAMCORDER,
+            MediaRecorder.AudioSource.UNPROCESSED,
+            MediaRecorder.AudioSource.MIC
+        )
+
+        for (source in candidateSources) {
+            val sourceName = audioSourceName(source)
+            try {
+                val candidate = AudioRecord(
+                    source,
+                    Constants.AUDIO_SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    bufferSizeBytes
+                )
+
+                if (candidate.state == AudioRecord.STATE_INITIALIZED) {
+                    Log.d(TAG, "AudioRecord initialized with source=$sourceName ($source), bufferSizeBytes=$bufferSizeBytes")
+                    return AudioRecordSetup(candidate, source, sourceName)
+                }
+
+                Log.w(TAG, "AudioRecord source=$sourceName ($source) failed to initialize, state=${candidate.state}")
+                candidate.release()
+            } catch (e: SecurityException) {
+                Log.e(TAG, "AudioRecord source=$sourceName ($source) blocked by microphone permission", e)
+                throw e
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "AudioRecord source=$sourceName ($source) rejected by platform", e)
+            } catch (e: UnsupportedOperationException) {
+                Log.w(TAG, "AudioRecord source=$sourceName ($source) unsupported by platform", e)
+            }
+        }
+
+        Log.e(TAG, "AudioRecord initialization failed for all candidate sources")
+        return null
+    }
+
+    private fun audioSourceName(source: Int): String {
+        return when (source) {
+            MediaRecorder.AudioSource.CAMCORDER -> "CAMCORDER"
+            MediaRecorder.AudioSource.UNPROCESSED -> "UNPROCESSED"
+            MediaRecorder.AudioSource.MIC -> "MIC"
+            else -> "UNKNOWN"
+        }
+    }
+
+    private fun calculatePcm16Peak(buffer: ByteArray, byteCount: Int): Int {
+        var peak = 0
+        var index = 0
+        val evenByteCount = byteCount - (byteCount % 2)
+
+        while (index < evenByteCount) {
+            val sample = (buffer[index].toInt() and 0xFF) or (buffer[index + 1].toInt() shl 8)
+            val amplitude = if (sample == Short.MIN_VALUE.toInt()) {
+                Short.MAX_VALUE.toInt() + 1
+            } else {
+                kotlin.math.abs(sample)
+            }
+            peak = maxOf(peak, amplitude)
+            index += 2
+        }
+
+        return peak
+    }
     
     fun startRecording() {
         // Check if connected
@@ -307,6 +384,17 @@ class GlassesViewModel(
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT
                 )
+
+                if (bufferSize == AudioRecord.ERROR || bufferSize == AudioRecord.ERROR_BAD_VALUE) {
+                    Log.e(TAG, "Invalid AudioRecord min buffer size: $bufferSize")
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(
+                            displayText = "Failed to initialize microphone",
+                            isListening = false
+                        ) }
+                    }
+                    return@launch
+                }
                 
                 // Verify permission again before AudioRecord initialization
                 if (ActivityCompat.checkSelfPermission(
@@ -324,13 +412,8 @@ class GlassesViewModel(
                     return@launch
                 }
                 
-                audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                    Constants.AUDIO_SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    bufferSize * 2
-                )
+                val audioRecordSetup = createAudioRecord(bufferSize * 2)
+                audioRecord = audioRecordSetup?.audioRecord
                 
                 // Verify AudioRecord was initialized successfully
                 if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
@@ -347,21 +430,50 @@ class GlassesViewModel(
                 }
                 
                 audioRecord?.startRecording()
-                Log.d(TAG, "AudioRecord started recording")
+                Log.d(TAG, "AudioRecord started recording with source=${audioRecordSetup?.sourceName} (${audioRecordSetup?.source})")
                 
                 val buffer = ByteArray(Constants.AUDIO_BUFFER_SIZE)
+                var totalBytesRead = 0L
+                var readCalls = 0L
+                var zeroReadCalls = 0L
+                var errorReadCalls = 0L
+                var peakSinceLastLog = 0
+                var lastDiagnosticLogMs = System.currentTimeMillis()
                 
                 while (isActive && _uiState.value.isListening) {
                     val readSize = audioRecord?.read(buffer, 0, buffer.size) ?: 0
+                    readCalls++
                     if (readSize > 0) {
+                        totalBytesRead += readSize
+                        peakSinceLastLog = maxOf(peakSinceLastLog, calculatePcm16Peak(buffer, readSize))
                         // Collect audio data to buffer
                         synchronized(audioBuffer) {
                             audioBuffer.write(buffer, 0, readSize)
                         }
+                    } else if (readSize == 0) {
+                        zeroReadCalls++
+                    } else {
+                        errorReadCalls++
+                        Log.w(TAG, "AudioRecord.read returned error code $readSize")
+                    }
+
+                    val nowMs = System.currentTimeMillis()
+                    if (nowMs - lastDiagnosticLogMs >= AUDIO_DIAGNOSTIC_INTERVAL_MS) {
+                        Log.d(
+                            TAG,
+                            "Audio diagnostic source=${audioRecordSetup?.sourceName} readCalls=$readCalls " +
+                                "bytes=$totalBytesRead peak=$peakSinceLastLog zeroReads=$zeroReadCalls errorReads=$errorReadCalls"
+                        )
+                        peakSinceLastLog = 0
+                        lastDiagnosticLogMs = nowMs
                     }
                 }
                 
-                Log.d(TAG, "Recording ended, collected ${audioBuffer.size()} bytes")
+                Log.d(
+                    TAG,
+                    "Recording ended, source=${audioRecordSetup?.sourceName}, collected ${audioBuffer.size()} bytes, " +
+                        "readCalls=$readCalls, zeroReads=$zeroReadCalls, errorReads=$errorReadCalls"
+                )
                 
             } catch (e: SecurityException) {
                 Log.e(TAG, "Microphone permission error", e)
@@ -568,12 +680,36 @@ class GlassesViewModel(
                 // Phone ended Live mode
                 Log.d(TAG, "Live session ended by phone")
                 isLiveModeActive = false
-                stopVideoStreaming()
+                if (!isVisualTranslationActive) {
+                    stopVideoStreaming()
+                }
                 _uiState.update { it.copy(
                     isLiveModeActive = false,
                     displayText = "Live mode ended",
                     hintText = context.getString(R.string.tap_touchpad_start),
                     liveTranscription = ""
+                ) }
+            }
+
+            MessageType.VISUAL_TRANSLATION_START -> {
+                Log.d(TAG, "Visual translation started by phone")
+                isVisualTranslationActive = true
+                _uiState.update { it.copy(
+                    displayText = "Visual translation active",
+                    hintText = "Look at text to translate"
+                ) }
+                startVideoStreaming()
+            }
+
+            MessageType.VISUAL_TRANSLATION_END -> {
+                Log.d(TAG, "Visual translation ended by phone")
+                isVisualTranslationActive = false
+                if (!isLiveModeActive) {
+                    stopVideoStreaming()
+                }
+                _uiState.update { it.copy(
+                    displayText = context.getString(R.string.connected_ready),
+                    hintText = context.getString(R.string.tap_touchpad_start)
                 ) }
             }
             
@@ -841,10 +977,10 @@ class GlassesViewModel(
             return
         }
         
-        Log.d(TAG, "Starting Live mode video streaming (~1fps, quality=$videoFrameQuality)")
+        Log.d(TAG, "Starting video frame streaming (~1fps, quality=$videoFrameQuality)")
         
         videoStreamingJob = viewModelScope.launch(Dispatchers.IO) {
-            while (isActive && isLiveModeActive) {
+            while (isActive && (isLiveModeActive || isVisualTranslationActive)) {
                 try {
                     // Capture one camera frame
                     val rawImageData = cameraManager?.capturePhoto()

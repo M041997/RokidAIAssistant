@@ -51,6 +51,9 @@ fun HomeScreen(
     onStartService: () -> Unit,
     onStopService: () -> Unit,
     onCapturePhoto: () -> Unit,
+    onCaptureTranslationPhoto: () -> Unit = {},
+    onStartVisualTranslation: () -> Unit = {},
+    onStopVisualTranslation: () -> Unit = {},
     onStartPhoneRecording: () -> Unit = {},
     onStartGlassesRecording: () -> Unit = {},
     onPauseRecording: () -> Unit = {},
@@ -128,7 +131,10 @@ fun HomeScreen(
         item {
             AnimatedSection(visible = connectionState == ConnectionState.CONNECTED) {
                 CameraCaptureCard(
-                    onCapturePhoto = onCapturePhoto
+                    onCapturePhoto = onCapturePhoto,
+                    onCaptureTranslationPhoto = onCaptureTranslationPhoto,
+                    onStartVisualTranslation = onStartVisualTranslation,
+                    onStopVisualTranslation = onStopVisualTranslation
                 )
             }
         }
@@ -443,17 +449,49 @@ private fun GlassesConnectionCard(
 
 @Composable
 private fun CameraCaptureCard(
-    onCapturePhoto: () -> Unit
+    onCapturePhoto: () -> Unit,
+    onCaptureTranslationPhoto: () -> Unit,
+    onStartVisualTranslation: () -> Unit,
+    onStopVisualTranslation: () -> Unit
 ) {
-    ActionCard(
-        icon = Icons.Default.CameraAlt,
-        title = stringResource(R.string.camera_capture),
-        subtitle = stringResource(R.string.camera_capture_hint),
-        actionLabel = stringResource(R.string.capture),
-        onAction = onCapturePhoto,
-        iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-        iconColor = MaterialTheme.colorScheme.onSecondaryContainer
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ActionCard(
+            icon = Icons.Default.Translate,
+            title = stringResource(R.string.live_visual_translation),
+            subtitle = stringResource(R.string.live_visual_translation_hint),
+            actionLabel = stringResource(R.string.start),
+            onAction = onStartVisualTranslation,
+            iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            iconColor = MaterialTheme.colorScheme.onTertiaryContainer
+        )
+        ActionCard(
+            icon = Icons.Default.StopCircle,
+            title = stringResource(R.string.stop_visual_translation),
+            subtitle = stringResource(R.string.stop_visual_translation_hint),
+            actionLabel = stringResource(R.string.stop),
+            onAction = onStopVisualTranslation,
+            iconContainerColor = MaterialTheme.colorScheme.errorContainer,
+            iconColor = MaterialTheme.colorScheme.onErrorContainer
+        )
+        ActionCard(
+            icon = Icons.Default.CameraAlt,
+            title = stringResource(R.string.camera_capture),
+            subtitle = stringResource(R.string.camera_capture_hint),
+            actionLabel = stringResource(R.string.capture),
+            onAction = onCapturePhoto,
+            iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            iconColor = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+        ActionCard(
+            icon = Icons.Default.Translate,
+            title = stringResource(R.string.visual_translation),
+            subtitle = stringResource(R.string.visual_translation_hint),
+            actionLabel = stringResource(R.string.translate),
+            onAction = onCaptureTranslationPhoto,
+            iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            iconColor = MaterialTheme.colorScheme.onTertiaryContainer
+        )
+    }
 }
 
 @Composable

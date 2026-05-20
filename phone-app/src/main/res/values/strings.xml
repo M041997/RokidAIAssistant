@@ -278,6 +278,13 @@
     <string name="image_analysis_prompt">Please describe in detail what you see in this image. Include main objects, scene, colors and other details. Be concise and clear.</string>
     <string name="image_ocr_prompt">Please identify and extract all text content from this image. If there are tables, maintain the format. If there is no text, describe the image content.</string>
     <string name="image_translate_prompt">Please identify the text in the image and translate it. Provide both the original and translated text.</string>
+    <string name="visual_translation">Visual translation</string>
+    <string name="visual_translation_hint">Capture visible Spanish text and show English on the glasses.</string>
+    <string name="live_visual_translation">Live visual translation</string>
+    <string name="live_visual_translation_hint">Continuously translate visible Japanese text to English on the glasses.</string>
+    <string name="stop_visual_translation">Stop visual translation</string>
+    <string name="stop_visual_translation_hint">Stop sending camera frames for translation.</string>
+    <string name="translate">Translate</string>
     <string name="image_summary_prompt">Please summarize the main content of this image in one sentence.</string>
     <string name="ai_analysis_unavailable">AI image analysis not available</string>
     <string name="photo_analysis_failed">Photo analysis failed: %s</string>

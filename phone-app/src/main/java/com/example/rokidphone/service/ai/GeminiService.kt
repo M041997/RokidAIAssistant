@@ -99,7 +99,7 @@ class GeminiService(
                 return@withContext SpeechResult.Error("Audio too short, please try again")
             }
             
-            val wavData = pcmToWav(pcmAudioData)
+            val wavData = pcmToWav(normalizePcm16Le(pcmAudioData))
             val audioBase64 = Base64.encodeToString(wavData, Base64.NO_WRAP)
             
             val requestJson = JSONObject().apply {
