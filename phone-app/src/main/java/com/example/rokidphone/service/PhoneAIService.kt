@@ -59,7 +59,7 @@ class PhoneAIService : Service() {
         private const val VISUAL_TRANSLATION_FRAME_INTERVAL_MS = 3000L
         private const val VISUAL_TRANSLATION_RESULT_HOLD_MS = 20000L
         private const val VISUAL_TRANSLATION_VIEW_SETTLE_MS = 2500L
-        private const val VISUAL_TRANSLATION_FRAME_HASH_SIMILAR_BITS = 8
+        private const val VISUAL_TRANSLATION_FRAME_HASH_SIMILAR_BITS = 24
     }
 
     private enum class PhotoAnalysisMode {
@@ -947,7 +947,7 @@ class PhoneAIService : Service() {
                 val currentFrameHash = visualTranslationFrameHash(frameData)
                 if (currentFrameHash != null) {
                     val previousFrameHash = lastVisualTranslationSeenFrameHash
-                    if (previousFrameHash == null || !areVisualTranslationFramesSimilar(previousFrameHash, currentFrameHash)) {
+                    if (previousFrameHash == null) {
                         lastVisualTranslationSeenFrameHash = currentFrameHash
                         lastVisualTranslationSceneChangedMs = now
                         updatePipeline(
@@ -957,6 +957,13 @@ class PhoneAIService : Service() {
                             severity = ServiceBridge.PipelineSeverity.WORKING
                         )
                         return@launch
+                    }
+
+                    if (!areVisualTranslationFramesSimilar(previousFrameHash, currentFrameHash)) {
+                        lastVisualTranslationSeenFrameHash = currentFrameHash
+                        if (lastVisualTranslationSceneChangedMs == 0L) {
+                            lastVisualTranslationSceneChangedMs = now
+                        }
                     }
 
                     if (now - lastVisualTranslationSceneChangedMs < VISUAL_TRANSLATION_VIEW_SETTLE_MS) {
