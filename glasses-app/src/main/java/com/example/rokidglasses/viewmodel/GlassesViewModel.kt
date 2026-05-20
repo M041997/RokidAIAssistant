@@ -133,6 +133,9 @@ class GlassesViewModel(
     
     // Video streaming JPEG compression quality (0-100)
     private val videoFrameQuality = 50
+
+    // Live translation should match the user's central field of view, not the full wide camera frame.
+    private val visualTranslationFrameZoom = 1.35f
     
     init {
         initializeBluetooth()
@@ -988,11 +991,14 @@ class GlassesViewModel(
                     if (rawImageData != null) {
                         // Compress to low-quality JPEG to reduce transfer size (video frames use smaller dimensions)
                         val compressedFrame = withContext(Dispatchers.Default) {
+                            val shouldZoomFrame = isVisualTranslationActive
                             ImageCompressor.compressForTransfer(
                                 rawImageData,
                                 targetWidth = 640,
                                 targetHeight = 480,
-                                quality = videoFrameQuality
+                                quality = videoFrameQuality,
+                                centerCropToTargetAspect = shouldZoomFrame,
+                                zoomFactor = if (shouldZoomFrame) visualTranslationFrameZoom else 1.0f
                             )
                         }
                         

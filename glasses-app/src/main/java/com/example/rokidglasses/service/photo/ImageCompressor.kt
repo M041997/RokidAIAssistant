@@ -40,7 +40,9 @@ object ImageCompressor {
         targetWidth: Int = PhotoTransferConstants.TARGET_IMAGE_WIDTH,
         targetHeight: Int = PhotoTransferConstants.TARGET_IMAGE_HEIGHT,
         quality: Int = PhotoTransferConstants.JPEG_QUALITY,
-        maxSize: Int = PhotoTransferConstants.MAX_COMPRESSED_SIZE
+        maxSize: Int = PhotoTransferConstants.MAX_COMPRESSED_SIZE,
+        centerCropToTargetAspect: Boolean = false,
+        zoomFactor: Float = 1.0f
     ): ByteArray = withContext(Dispatchers.Default) {
         
         Log.d(TAG, "Compressing image: input=${imageData.size} bytes")
@@ -67,12 +69,28 @@ object ImageCompressor {
         val sampledBitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size, options)
             ?: throw IllegalArgumentException("Failed to decode image")
         
+        val preparedBitmap = if (centerCropToTargetAspect || zoomFactor > 1.0f) {
+            centerCropBitmap(
+                sampledBitmap,
+                targetAspectRatio = targetWidth.toFloat() / targetHeight.toFloat(),
+                zoomFactor = zoomFactor
+            )
+        } else {
+            sampledBitmap
+        }
+
         // Scale to exact target size while maintaining aspect ratio
-        val scaledBitmap = scaleBitmap(sampledBitmap, targetWidth, targetHeight)
+        val scaledBitmap = if (centerCropToTargetAspect || zoomFactor > 1.0f) {
+            Bitmap.createScaledBitmap(preparedBitmap, targetWidth, targetHeight, true)
+        } else {
+            scaleBitmap(preparedBitmap, targetWidth, targetHeight)
+        }
         
-        // Recycle sampled bitmap if different from scaled
-        if (sampledBitmap != scaledBitmap) {
+        if (sampledBitmap != preparedBitmap) {
             sampledBitmap.recycle()
+        }
+        if (preparedBitmap != scaledBitmap) {
+            preparedBitmap.recycle()
         }
         
         // Compress to JPEG with adaptive quality
@@ -164,6 +182,37 @@ object ImageCompressor {
         val newHeight = (height * scale).toInt()
         
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
+    /**
+     * Center-crop to the desired aspect ratio, then crop tighter for an optical-style zoom.
+     */
+    private fun centerCropBitmap(
+        bitmap: Bitmap,
+        targetAspectRatio: Float,
+        zoomFactor: Float
+    ): Bitmap {
+        val safeZoom = zoomFactor.coerceAtLeast(1.0f)
+        val sourceWidth = bitmap.width
+        val sourceHeight = bitmap.height
+        val sourceAspectRatio = sourceWidth.toFloat() / sourceHeight.toFloat()
+
+        var cropWidth = sourceWidth
+        var cropHeight = sourceHeight
+        if (sourceAspectRatio > targetAspectRatio) {
+            cropWidth = (sourceHeight * targetAspectRatio).toInt()
+        } else {
+            cropHeight = (sourceWidth / targetAspectRatio).toInt()
+        }
+
+        cropWidth = (cropWidth / safeZoom).toInt().coerceIn(1, sourceWidth)
+        cropHeight = (cropHeight / safeZoom).toInt().coerceIn(1, sourceHeight)
+
+        val left = ((sourceWidth - cropWidth) / 2).coerceAtLeast(0)
+        val top = ((sourceHeight - cropHeight) / 2).coerceAtLeast(0)
+
+        Log.d(TAG, "Center crop zoom: ${sourceWidth}x${sourceHeight} -> ${cropWidth}x${cropHeight}, zoom=$safeZoom")
+        return Bitmap.createBitmap(bitmap, left, top, cropWidth, cropHeight)
     }
     
     /**
