@@ -1,6 +1,12 @@
 package com.example.rokidphone.viewmodel
 
+import android.Manifest
 import android.app.Application
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TAG = "PhoneViewModel"
@@ -34,7 +41,9 @@ data class PhoneUiState(
     val latestPhotoPath: String? = null,     // Path to the latest received photo
     val recordingState: RecordingState = RecordingState.Idle,  // Recording state
     val pipelineStatus: ServiceBridge.PipelineStatus = ServiceBridge.PipelineStatus(),
-    val isVisualTranslationActive: Boolean = false
+    val isVisualTranslationActive: Boolean = false,
+    val isSystemBluetoothGlassesConnected: Boolean = false,
+    val systemBluetoothGlassesName: String? = null
 )
 
 class PhoneViewModel(application: Application) : AndroidViewModel(application) {
@@ -44,6 +53,8 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     
     // Recording repository
     private val recordingRepository = RecordingRepository.getInstance(application, viewModelScope)
+    private val bluetoothManager =
+        application.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     
     init {
         // Listen to recording state
@@ -116,6 +127,20 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(isVisualTranslationActive = isActive) }
             }
         }
+
+        // Android Bluetooth profile connection is separate from our Assistant data channel.
+        viewModelScope.launch {
+            while (true) {
+                val glassesName = getSystemConnectedGlassesName()
+                _uiState.update {
+                    it.copy(
+                        isSystemBluetoothGlassesConnected = glassesName != null,
+                        systemBluetoothGlassesName = glassesName
+                    )
+                }
+                delay(2500)
+            }
+        }
         
         // Listen to conversation messages (voice input from glasses and AI response)
         viewModelScope.launch {
@@ -172,6 +197,33 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     
     fun updateProcessingStatus(status: String?) {
         _uiState.update { it.copy(processingStatus = status) }
+    }
+
+    private fun getSystemConnectedGlassesName(): String? {
+        if (!hasBluetoothConnectPermission()) return null
+
+        val adapter = bluetoothManager.adapter ?: return null
+        val connectedDevices = listOf(BluetoothProfile.A2DP, BluetoothProfile.HEADSET)
+            .flatMap { profile ->
+                runCatching { bluetoothManager.getConnectedDevices(profile) }.getOrDefault(emptyList())
+            }
+            .distinctBy { it.address }
+
+        return connectedDevices.firstOrNull { device ->
+            val name = runCatching { device.name }.getOrNull().orEmpty()
+            name.contains("glasses", ignoreCase = true) ||
+                name.contains("rokid", ignoreCase = true) ||
+                runCatching { adapter.bondedDevices.any { it.address == device.address && it.name.contains("glasses", ignoreCase = true) } }
+                    .getOrDefault(false)
+        }?.let { device ->
+            runCatching { device.name }.getOrNull()?.takeIf { it.isNotBlank() } ?: "Rokid glasses"
+        }
+    }
+
+    private fun hasBluetoothConnectPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            getApplication<Application>().checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
+                PackageManager.PERMISSION_GRANTED
     }
     
     fun addConversation(role: String, content: String) {

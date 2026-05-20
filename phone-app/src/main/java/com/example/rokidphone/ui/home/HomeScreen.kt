@@ -49,6 +49,8 @@ fun HomeScreen(
     currentModelId: String,
     visualTranslationSourceLanguage: String,
     isVisualTranslationActive: Boolean,
+    isSystemBluetoothGlassesConnected: Boolean,
+    systemBluetoothGlassesName: String?,
     conversations: List<ConversationItem>,
     recordingState: RecordingState = RecordingState.Idle,
     onConnect: () -> Unit,
@@ -98,16 +100,26 @@ fun HomeScreen(
                     title = stringResource(R.string.glasses_status),
                     value = when (connectionState) {
                         ConnectionState.CONNECTED -> connectedGlassesName ?: stringResource(R.string.connected)
-                        ConnectionState.CONNECTING -> stringResource(R.string.connecting)
-                        ConnectionState.RECONNECTING -> stringResource(R.string.reconnecting)
-                        ConnectionState.ERROR -> stringResource(R.string.connection_error)
-                        else -> stringResource(R.string.disconnected)
+                        else -> if (isSystemBluetoothGlassesConnected) {
+                            stringResource(R.string.bluetooth_connected)
+                        } else {
+                            when (connectionState) {
+                                ConnectionState.CONNECTING -> stringResource(R.string.connecting)
+                                ConnectionState.RECONNECTING -> stringResource(R.string.reconnecting)
+                                ConnectionState.ERROR -> stringResource(R.string.connection_error)
+                                else -> stringResource(R.string.disconnected)
+                            }
+                        }
                     },
                     valueColor = when (connectionState) {
                         ConnectionState.CONNECTED -> ExtendedTheme.colors.success
                         ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> MaterialTheme.colorScheme.tertiary
                         ConnectionState.ERROR -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> if (isSystemBluetoothGlassesConnected) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     },
                     modifier = Modifier.weight(1f)
                 )
@@ -124,12 +136,14 @@ fun HomeScreen(
         
         // Connection control card
         item {
-            GlassesConnectionCard(
-                connectionState = connectionState,
-                glassesName = connectedGlassesName,
-                onConnect = onConnect,
-                onDisconnect = onDisconnect
-            )
+                GlassesConnectionCard(
+                    connectionState = connectionState,
+                    glassesName = connectedGlassesName,
+                    isSystemBluetoothGlassesConnected = isSystemBluetoothGlassesConnected,
+                    systemBluetoothGlassesName = systemBluetoothGlassesName,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect
+                )
         }
 
         item {
@@ -430,10 +444,13 @@ private fun WelcomeHeader() {
 private fun GlassesConnectionCard(
     connectionState: ConnectionState,
     glassesName: String?,
+    isSystemBluetoothGlassesConnected: Boolean,
+    systemBluetoothGlassesName: String?,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     val isConnected = connectionState == ConnectionState.CONNECTED
+    val isBluetoothOnlyConnected = !isConnected && isSystemBluetoothGlassesConnected
     val isConnecting = connectionState == ConnectionState.CONNECTING || 
                        connectionState == ConnectionState.RECONNECTING
     
@@ -446,7 +463,11 @@ private fun GlassesConnectionCard(
                 ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> 
                     MaterialTheme.colorScheme.tertiaryContainer
                 ConnectionState.ERROR -> MaterialTheme.colorScheme.errorContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
+                else -> if (isBluetoothOnlyConnected) {
+                    MaterialTheme.colorScheme.tertiaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
             }
         )
     ) {
@@ -473,14 +494,22 @@ private fun GlassesConnectionCard(
                             imageVector = when (connectionState) {
                                 ConnectionState.CONNECTED -> Icons.Default.BluetoothConnected
                                 ConnectionState.ERROR -> Icons.Default.BluetoothDisabled
-                                else -> Icons.AutoMirrored.Filled.BluetoothSearching
+                                else -> if (isBluetoothOnlyConnected) {
+                                    Icons.Default.BluetoothConnected
+                                } else {
+                                    Icons.AutoMirrored.Filled.BluetoothSearching
+                                }
                             },
                             contentDescription = null,
                             modifier = Modifier.size(28.dp),
                             tint = when (connectionState) {
                                 ConnectionState.CONNECTED -> ExtendedTheme.colors.success
                                 ConnectionState.ERROR -> MaterialTheme.colorScheme.error
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> if (isBluetoothOnlyConnected) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             }
                         )
                     }
@@ -496,16 +525,28 @@ private fun GlassesConnectionCard(
                         ConnectionState.CONNECTING -> stringResource(R.string.connecting)
                         ConnectionState.RECONNECTING -> stringResource(R.string.reconnecting)
                         ConnectionState.ERROR -> stringResource(R.string.connection_error)
-                        else -> stringResource(R.string.disconnected)
+                        else -> if (isBluetoothOnlyConnected) {
+                            stringResource(R.string.bluetooth_connected)
+                        } else {
+                            stringResource(R.string.disconnected)
+                        }
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 
-                if (!glassesName.isNullOrBlank()) {
+                val displayName = glassesName ?: systemBluetoothGlassesName
+                if (!displayName.isNullOrBlank()) {
                     Text(
-                        text = glassesName,
+                        text = displayName,
                         style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (isBluetoothOnlyConnected) {
+                    Text(
+                        text = stringResource(R.string.assistant_channel_waiting),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

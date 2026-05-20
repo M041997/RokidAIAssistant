@@ -249,6 +249,8 @@ fun PhoneMainScreen(
                     currentModelId = settings.aiModelId,
                     visualTranslationSourceLanguage = settings.visualTranslationSourceLanguage,
                     isVisualTranslationActive = uiState.isVisualTranslationActive,
+                    isSystemBluetoothGlassesConnected = uiState.isSystemBluetoothGlassesConnected,
+                    systemBluetoothGlassesName = uiState.systemBluetoothGlassesName,
                     conversations = uiState.conversations,
                     recordingState = uiState.recordingState,
                     onConnect = { viewModel.startScanning() },
