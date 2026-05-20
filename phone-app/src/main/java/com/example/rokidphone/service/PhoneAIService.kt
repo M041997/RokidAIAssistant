@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -57,6 +58,8 @@ class PhoneAIService : Service() {
         private const val TAG = "PhoneAIService"
         private const val VISUAL_TRANSLATION_FRAME_INTERVAL_MS = 3000L
         private const val VISUAL_TRANSLATION_RESULT_HOLD_MS = 12000L
+        private const val VISUAL_TRANSLATION_VIEW_SETTLE_MS = 2500L
+        private const val VISUAL_TRANSLATION_FRAME_HASH_SIMILAR_BITS = 8
     }
 
     private enum class PhotoAnalysisMode {
@@ -109,6 +112,9 @@ class PhoneAIService : Service() {
     private var lastVisualTranslationText = ""
     private var lastVisualTranslationNormalizedText = ""
     private var lastVisualTranslationSuccessMs = 0L
+    private var lastVisualTranslationSeenFrameHash: Long? = null
+    private var lastVisualTranslationSceneChangedMs = 0L
+    private var lastVisualTranslationAnalyzedFrameHash: Long? = null
 
     private fun updatePipeline(
         title: String,
@@ -889,6 +895,11 @@ class PhoneAIService : Service() {
         ServiceBridge.updateVisualTranslationActive(true)
         lastVisualTranslationFrameMs = 0L
         lastVisualTranslationText = ""
+        lastVisualTranslationNormalizedText = ""
+        lastVisualTranslationSuccessMs = 0L
+        lastVisualTranslationSeenFrameHash = null
+        lastVisualTranslationSceneChangedMs = 0L
+        lastVisualTranslationAnalyzedFrameHash = null
         bluetoothManager?.sendMessage(Message(type = MessageType.VISUAL_TRANSLATION_START))
         bluetoothManager?.sendMessage(Message.aiProcessing("Live visual translation active: $visualLanguage to English"))
     }
@@ -924,6 +935,48 @@ class PhoneAIService : Service() {
             try {
                 Log.d(TAG, "Analyzing visual translation frame: ${frameData.size} bytes")
                 saveLatestVisualTranslationFrame(frameData)
+
+                val currentFrameHash = visualTranslationFrameHash(frameData)
+                if (currentFrameHash != null) {
+                    val previousFrameHash = lastVisualTranslationSeenFrameHash
+                    if (previousFrameHash == null || !areVisualTranslationFramesSimilar(previousFrameHash, currentFrameHash)) {
+                        lastVisualTranslationSeenFrameHash = currentFrameHash
+                        lastVisualTranslationSceneChangedMs = now
+                        updatePipeline(
+                            title = "View settling",
+                            detail = "Camera view changed; waiting briefly before translating",
+                            progress = 0.35f,
+                            severity = ServiceBridge.PipelineSeverity.WORKING
+                        )
+                        return@launch
+                    }
+
+                    if (now - lastVisualTranslationSceneChangedMs < VISUAL_TRANSLATION_VIEW_SETTLE_MS) {
+                        updatePipeline(
+                            title = "View settling",
+                            detail = "Waiting for scrolling or motion to stop",
+                            progress = 0.35f,
+                            severity = ServiceBridge.PipelineSeverity.WORKING
+                        )
+                        return@launch
+                    }
+
+                    val analyzedFrameHash = lastVisualTranslationAnalyzedFrameHash
+                    if (lastVisualTranslationText.isNotBlank() &&
+                        analyzedFrameHash != null &&
+                        areVisualTranslationFramesSimilar(analyzedFrameHash, currentFrameHash)
+                    ) {
+                        lastVisualTranslationSuccessMs = System.currentTimeMillis()
+                        updatePipeline(
+                            title = "Translation held",
+                            detail = "Same view still visible; keeping the current translation",
+                            progress = 1f,
+                            severity = ServiceBridge.PipelineSeverity.SUCCESS
+                        )
+                        return@launch
+                    }
+                }
+
                 updatePipeline(
                     title = "Frame received",
                     detail = "Sending camera frame to Gemini for translation",
@@ -936,6 +989,9 @@ class PhoneAIService : Service() {
                 val result = aiService?.analyzeImage(frameData, buildVisualTranslationPrompt(visualLanguage))
                     ?: getString(R.string.ai_analysis_unavailable)
                 val cleanedResult = cleanMarkdown(result)
+                if (currentFrameHash != null) {
+                    lastVisualTranslationAnalyzedFrameHash = currentFrameHash
+                }
 
                 if (cleanedResult.contains("API key not valid", ignoreCase = true)) {
                     updatePipeline(
@@ -1009,6 +1065,48 @@ class PhoneAIService : Service() {
             .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
             .trim()
             .replace(Regex("\\s+"), " ")
+    }
+
+    private fun visualTranslationFrameHash(frameData: ByteArray): Long? {
+        return try {
+            val bitmap = BitmapFactory.decodeByteArray(frameData, 0, frameData.size) ?: return null
+            val scaled = android.graphics.Bitmap.createScaledBitmap(bitmap, 8, 8, true)
+            if (scaled != bitmap) {
+                bitmap.recycle()
+            }
+
+            val luminance = IntArray(64)
+            var total = 0
+            for (y in 0 until 8) {
+                for (x in 0 until 8) {
+                    val pixel = scaled.getPixel(x, y)
+                    val red = (pixel shr 16) and 0xff
+                    val green = (pixel shr 8) and 0xff
+                    val blue = pixel and 0xff
+                    val value = (red * 30 + green * 59 + blue * 11) / 100
+                    val index = y * 8 + x
+                    luminance[index] = value
+                    total += value
+                }
+            }
+            scaled.recycle()
+
+            val average = total / luminance.size
+            var hash = 0L
+            luminance.forEachIndexed { index, value ->
+                if (value >= average) {
+                    hash = hash or (1L shl index)
+                }
+            }
+            hash
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to hash visual translation frame", e)
+            null
+        }
+    }
+
+    private fun areVisualTranslationFramesSimilar(first: Long, second: Long): Boolean {
+        return java.lang.Long.bitCount(first xor second) <= VISUAL_TRANSLATION_FRAME_HASH_SIMILAR_BITS
     }
 
     private fun isNoVisualTranslationResult(result: String, sourceLanguageCode: String): Boolean {
