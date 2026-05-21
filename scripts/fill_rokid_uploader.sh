@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APK_PATH="$ROOT_DIR/glasses-app/build/outputs/apk/debug/glasses-app-debug.apk"
-DEVICE_APK_PATH="/sdcard/Download/glasses-app-debug.apk"
+APK_PATH=""
+DEVICE_APK_PATH=""
 UPLOADER_PACKAGE="io.github.miniontoby.rokidapkuploader"
 UPLOADER_ACTIVITY="$UPLOADER_PACKAGE/.MainActivity"
 SERIAL_FILE="$ROOT_DIR/debug_frames/rokid_serial.txt"
@@ -12,6 +12,8 @@ APK_FILE_NAME="glasses-app-debug.apk"
 launch_uploader=true
 push_apk=true
 tap_upload=false
+apk_path_set=false
+device_apk_path_set=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -19,11 +21,13 @@ while [[ $# -gt 0 ]]; do
             APK_PATH="$2"
             APK_FILE_NAME="$(basename "$APK_PATH")"
             DEVICE_APK_PATH="/sdcard/Download/$APK_FILE_NAME"
+            apk_path_set=true
             shift
             ;;
         --device-apk-path)
             DEVICE_APK_PATH="$2"
             APK_FILE_NAME="$(basename "$DEVICE_APK_PATH")"
+            device_apk_path_set=true
             shift
             ;;
         --no-launch)
@@ -42,6 +46,48 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+detect_main_glasses_apk() {
+    local preferred_apk="$ROOT_DIR/glasses-app/build/outputs/apk/debug/glasses-app-debug.apk"
+    if [[ -f "$preferred_apk" ]]; then
+        printf '%s' "$preferred_apk"
+        return 0
+    fi
+
+    find "$ROOT_DIR/glasses-app/build/outputs/apk" \
+        -type f \
+        -name '*.apk' \
+        -printf '%T@ %p\n' 2>/dev/null |
+        sort -nr |
+        awk 'NR == 1 { sub(/^[^ ]+ /, ""); print; exit }'
+}
+
+resolve_apk_defaults() {
+    if [[ "$apk_path_set" == false ]]; then
+        APK_PATH="$(detect_main_glasses_apk)"
+    fi
+
+    if [[ "$push_apk" == true && -z "$APK_PATH" ]]; then
+        echo "No main glasses APK found under glasses-app/build/outputs/apk." >&2
+        echo "Run scripts/update_glasses_apk.sh to build it, then this helper will auto-pick it." >&2
+        exit 1
+    fi
+
+    if [[ "$push_apk" == true && ! -f "$APK_PATH" ]]; then
+        echo "Missing APK: $APK_PATH" >&2
+        echo "Run ./gradlew :glasses-app:assembleDebug first, or use scripts/update_glasses_apk.sh." >&2
+        exit 1
+    fi
+
+    if [[ "$device_apk_path_set" == false ]]; then
+        if [[ -n "$APK_PATH" ]]; then
+            APK_FILE_NAME="$(basename "$APK_PATH")"
+        fi
+        DEVICE_APK_PATH="/sdcard/Download/$APK_FILE_NAME"
+    else
+        APK_FILE_NAME="$(basename "$DEVICE_APK_PATH")"
+    fi
+}
 
 wait_for_focus() {
     local package_name="$1"
@@ -114,16 +160,14 @@ select_apk() {
 
 echo "Checking for connected Android device..."
 adb get-state >/dev/null
+resolve_apk_defaults
 
 if [[ "$push_apk" == true ]]; then
-    if [[ ! -f "$APK_PATH" ]]; then
-        echo "Missing APK: $APK_PATH" >&2
-        echo "Run ./gradlew :glasses-app:assembleDebug first, or use scripts/update_glasses_apk.sh." >&2
-        exit 1
-    fi
-
+    echo "Using APK: $APK_PATH"
     echo "Copying APK to $DEVICE_APK_PATH..."
     adb push "$APK_PATH" "$DEVICE_APK_PATH" >/dev/null
+else
+    echo "Using APK already on Pixel: $DEVICE_APK_PATH"
 fi
 
 if [[ "$launch_uploader" == true ]]; then

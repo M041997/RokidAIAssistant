@@ -11,7 +11,7 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:23 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:27 CDT`
 
 Current working state:
 
@@ -20,7 +20,7 @@ Current working state:
 - Rokid AI on the glasses is back to normal.
 - Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
 - Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Finding glasses...`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
-- Rokid APK uploader helper scripts can stage the main glasses app or the separate Bluetooth launcher app without manually browsing for APKs.
+- Rokid APK uploader helper scripts can stage the main glasses app or the separate Bluetooth launcher app without manually browsing for APKs, and `scripts/rokid_apk_uploader.sh` defaults to the usual main glasses APK plus the saved serial.
 - Phone app auto-connects to the Pixel 7 path used during testing.
 - Photo translation works best in light mode / readable screen conditions.
 - Photo translation now keeps the whole wearer view on the glasses, then the phone rotates the frame, detects the bright readable screen/object region, crops/enhances/upscales it, and saves `latest_photo_translation_analyzed.jpg` for debugging.
@@ -442,8 +442,14 @@ A: Run scripts/update_glasses_apk.sh.
    Then it launches RokidApkUploader, selects the APK, and fills
    the serial number from debug_frames/rokid_serial.txt.
 
-   If the APK is already built and you only need to refill the
-   uploader form, run scripts/fill_rokid_uploader.sh.
+   If the APK is already built and you only need to run the usual
+   uploader flow, run scripts/rokid_apk_uploader.sh. It auto-detects
+   the main glasses APK under glasses-app/build/outputs/apk, pushes it
+   to the Pixel Downloads folder, selects it in RokidApkUploader, and
+   fills the saved serial number.
+
+   scripts/fill_rokid_uploader.sh is the lower-level helper and accepts
+   --apk-path when you need to stage a non-default APK.
 
    To stage the separate glasses-menu Bluetooth launcher APK, run:
    scripts/fill_bluetooth_launcher_apk.sh.
