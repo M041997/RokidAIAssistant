@@ -11,36 +11,41 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `backup/audio-visual-translation-checkpoint`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 08:53 CDT`
 
 Current working state:
 
-- Phone app is installed and using the Gemini key from `.env` / build config by default.
-- In-app pipeline status reports whether the Gemini key is missing, checking, valid, or rejected.
-- Glasses audio recordings now process successfully through STT and AI response generation.
+- Current branch: `live-translation-frame-debug`.
+- Latest pushed remote checkpoint: `40cb0de Split Bluetooth blue light into separate launcher app`.
+- Rokid AI on the glasses is back to normal.
+- Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
+- Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Finding glasses...`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
+- Rokid APK uploader helper scripts can stage the main glasses app or the separate Bluetooth launcher app without manually browsing for APKs.
+- Phone app auto-connects to the Pixel 7 path used during testing.
+- Photo translation works best in light mode / readable screen conditions, with photo translation using crop/upscale and auto language detection.
 - Live visual translation works for Japanese and Spanish to English when the frame is readable.
-- Live visual translation now supports source-language auto-detect to English, plus explicit choices such as Japanese, Spanish, German, and French.
-- The Home screen uses one live translation toggle button: start when inactive, stop when active.
-- Local/custom OpenAI-compatible vision models are enabled and tested with a local Qwen3 VL server over Tailscale.
-- Custom/Qwen mode stays selected instead of falling back to Gemini, supports local HTTP, and uses a placeholder `local` API key when needed.
-- Glasses live visual translation frames now use a centered `2x` zoom crop before being sent to the phone.
-- Live visual translation skips unreadable frames, waits for the view to settle, avoids repeat calls on similar frames, and holds successful translations with a `20s` reading timer.
+- Local backup zip was created and copied to the Expansion drive.
 
 What we are testing next:
 
-1. Start `Live translate to English` with visual translation language set to `Auto-detect`.
-2. Test Gemini and Custom/Qwen against the same clear Spanish/Japanese paragraph.
-3. Confirm Custom/Qwen translates once, then shows the `20s` reading timer without repeated API calls.
-4. Pull the latest diagnostic frame if Qwen skips too many frames.
-5. Tune visual frame orientation/brightness/crop if the diagnostic frame is still sideways or too dark.
+1. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm blue light -> uploader finds glasses.
+2. Review photo translation under normal sitting distance and light-mode screen conditions.
+3. Confirm photo translation pagination/auto-advance feels natural on the glasses.
+4. Re-check live translation to English with Japanese and Spanish, since that path is currently good enough.
+5. Decide whether to keep tuning photo crop/upscale or move on to spatial text overlay research.
 
 Notes:
 
 - The phone APK is already installed for the current checkpoint.
-- The glasses APK with the current `2x` zoom and rotation behavior has been uploaded during testing.
+- The glasses Rokid AI APK is installed and back to normal.
+- The separate Bluetooth launcher APK is installed as its own glasses menu option.
 - `/sdcard/Download/...` means the Pixel's internal Downloads folder, not a physical SD card.
 - The current experience is live translation text on the glasses, not yet a Google Translate-style spatial text replacement overlay.
 - Local Qwen test URL: `http://100.114.53.77:11440/v1` with model `qwen3` / `qwen3GGUF_moe`; Pixel must be connected to Tailscale.
+- Backup zip on Expansion:
+  `/media/boss/Expansion/RokidAIAssistant_Backups/RokidAIAssistant_backup_20260521-085059_live-translation-frame-debug.zip`
+- Backup SHA-256:
+  `a5ef79532c31543ec6db1b6cd5b60d765b43a83324bf48e5451a7e4f0d04add1`
 
 Spatial translation overlay status:
 
@@ -299,6 +304,10 @@ Current checkpoint:
 - [x] Custom/Qwen OpenAI-compatible vision provider connects over Tailscale
 - [x] Custom/Qwen live visual translation path calls the local server instead of Gemini
 - [x] Live visual translation has stable-frame gating and a `20s` reading timer
+- [x] Rokid AI glasses app restored to normal after Bluetooth menu experiments
+- [x] Separate glasses menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` installed
+- [x] Blue-light launcher turns on the glasses blue light and lets the Pixel uploader find the glasses
+- [x] Project zip backup copied to `/media/boss/Expansion/RokidAIAssistant_Backups/`
 - [ ] Validate live-frame orientation and readability under normal wearing conditions
 - [ ] Test auto-detect translation on Japanese, Spanish, German, and French across Gemini and Qwen
 - [ ] Decide whether to tune zoom/crop/rotation after seeing new captured frames
