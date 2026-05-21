@@ -6,6 +6,7 @@ APK_PATH=""
 DEVICE_APK_PATH=""
 UPLOADER_PACKAGE="io.github.miniontoby.rokidapkuploader"
 UPLOADER_ACTIVITY="$UPLOADER_PACKAGE/.MainActivity"
+PHONE_APP_PACKAGE="com.example.rokidphone"
 SERIAL_FILE="$ROOT_DIR/debug_frames/rokid_serial.txt"
 APK_FILE_NAME="glasses-app-debug.apk"
 
@@ -14,6 +15,7 @@ push_apk=true
 tap_upload=false
 apk_path_set=false
 device_apk_path_set=false
+reset_bluetooth=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -38,6 +40,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --upload)
             tap_upload=true
+            ;;
+        --reset-bluetooth)
+            reset_bluetooth=true
             ;;
         *)
             echo "Unknown option: $1" >&2
@@ -101,6 +106,22 @@ wait_for_focus() {
     return 1
 }
 
+prepare_phone_connection_state() {
+    echo "Stopping apps that can hold the glasses connection..."
+    adb shell am force-stop "$PHONE_APP_PACKAGE" >/dev/null 2>&1 || true
+    adb shell am force-stop "$UPLOADER_PACKAGE" >/dev/null 2>&1 || true
+    adb shell am force-stop com.google.android.documentsui >/dev/null 2>&1 || true
+
+    if [[ "$reset_bluetooth" == true ]]; then
+        echo "Resetting Pixel Bluetooth adapter..."
+        adb shell cmd bluetooth_manager disable >/dev/null
+        adb shell cmd bluetooth_manager wait-for-state:STATE_OFF >/dev/null 2>&1 || sleep 2
+        adb shell cmd bluetooth_manager enable >/dev/null
+        adb shell cmd bluetooth_manager wait-for-state:STATE_ON >/dev/null 2>&1 || sleep 3
+        sleep 2
+    fi
+}
+
 read_serial_number() {
     if [[ ! -f "$SERIAL_FILE" ]]; then
         return 0
@@ -161,6 +182,7 @@ select_apk() {
 echo "Checking for connected Android device..."
 adb get-state >/dev/null
 resolve_apk_defaults
+prepare_phone_connection_state
 
 if [[ "$push_apk" == true ]]; then
     echo "Using APK: $APK_PATH"
@@ -172,8 +194,6 @@ fi
 
 if [[ "$launch_uploader" == true ]]; then
     echo "Launching Rokid APK uploader..."
-    adb shell am force-stop "$UPLOADER_PACKAGE" >/dev/null
-    adb shell am force-stop com.google.android.documentsui >/dev/null
     adb shell am start -S -n "$UPLOADER_ACTIVITY" >/dev/null
 
     sleep 1

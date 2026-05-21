@@ -11,7 +11,7 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:27 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:31 CDT`
 
 Current working state:
 
@@ -19,8 +19,9 @@ Current working state:
 - Latest pushed remote checkpoint on `m041997/live-translation-frame-debug` includes photo and live translation readable-surface ROI/object crop fixes.
 - Rokid AI on the glasses is back to normal.
 - Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
-- Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Finding glasses...`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
+- Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Now searching for connection`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
 - Rokid APK uploader helper scripts can stage the main glasses app or the separate Bluetooth launcher app without manually browsing for APKs, and `scripts/rokid_apk_uploader.sh` defaults to the usual main glasses APK plus the saved serial.
+- Uploader helpers now stop the Rokid AI phone app before launching RokidApkUploader so the phone app cannot hold the glasses Bluetooth/CXR connection during APK upload.
 - Phone app auto-connects to the Pixel 7 path used during testing.
 - Photo translation works best in light mode / readable screen conditions.
 - Photo translation now keeps the whole wearer view on the glasses, then the phone rotates the frame, detects the bright readable screen/object region, crops/enhances/upscales it, and saves `latest_photo_translation_analyzed.jpg` for debugging.
@@ -450,6 +451,12 @@ A: Run scripts/update_glasses_apk.sh.
 
    scripts/fill_rokid_uploader.sh is the lower-level helper and accepts
    --apk-path when you need to stage a non-default APK.
+
+   If RokidApkUploader gets stuck on `init device connection` while the
+   glasses are flashing blue, run:
+   scripts/rokid_apk_uploader.sh --reset-bluetooth
+   This stops the Rokid AI phone app/uploader and resets the Pixel
+   Bluetooth adapter before staging the upload again.
 
    To stage the separate glasses-menu Bluetooth launcher APK, run:
    scripts/fill_bluetooth_launcher_apk.sh.
