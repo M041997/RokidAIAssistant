@@ -45,6 +45,8 @@ android {
         }
         return ""
     }
+    fun escapedBuildConfigString(value: String): String =
+        value.replace("\\", "\\\\").replace("\"", "\\\"")
 
     val releaseStoreFile = localProperty("RELEASE_STORE_FILE")
     val releaseStorePassword = localProperty("RELEASE_STORE_PASSWORD")
@@ -74,8 +76,13 @@ android {
             "GOOGLE_API_KEY"
         )
         val openaiKey = secretProperty("OPENAI_API_KEY")
+        val rokidSerial = secretProperty("ROKID_GLASSES_SERIAL", "ROKID_SERIAL").ifBlank {
+            val localSerialFile = rootProject.file("debug_frames/rokid_serial.txt")
+            if (localSerialFile.exists()) sanitizedSecret(localSerialFile.readText()) else ""
+        }
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"$openaiKey\"")
+        buildConfigField("String", "ROKID_GLASSES_SERIAL", "\"${escapedBuildConfigString(rokidSerial)}\"")
     }
 
     signingConfigs {

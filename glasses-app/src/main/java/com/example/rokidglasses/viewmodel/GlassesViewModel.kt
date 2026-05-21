@@ -93,6 +93,9 @@ class GlassesViewModel(
         private const val PHOTO_TRANSLATION_TARGET_HEIGHT = 720
         private const val PHOTO_TRANSLATION_QUALITY = 85
         private const val PHOTO_TRANSLATION_MAX_SIZE_BYTES = 400 * 1024
+        private const val PREFS_NAME = "glasses_connection"
+        private const val KEY_PREFERRED_PHONE_ADDRESS = "preferred_phone_address"
+        private const val KEY_PREFERRED_PHONE_NAME = "preferred_phone_name"
         private val PREFERRED_PHONE_NAMES = listOf("Pixel 7", "Pixel_7")
     }
     
@@ -156,6 +159,10 @@ class GlassesViewModel(
 
     // Rokid camera frames arrive in sensor orientation, which is sideways relative to the wearer view.
     private val visualTranslationFrameRotationDegrees = 180
+
+    private val connectionPrefs by lazy {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
     
     init {
         initializeBluetooth()
@@ -289,7 +296,14 @@ class GlassesViewModel(
         val devices = bluetoothClient.getPairedDevices()
         _uiState.update { it.copy(availableDevices = devices) }
 
-        val preferredDevice = devices.firstOrNull { device ->
+        val savedAddress = connectionPrefs.getString(KEY_PREFERRED_PHONE_ADDRESS, null)
+        val savedDevice = savedAddress?.let { address ->
+            devices.firstOrNull { device ->
+                runCatching { device.address == address }.getOrDefault(false)
+            }
+        }
+
+        val preferredDevice = savedDevice ?: devices.firstOrNull { device ->
             val name = runCatching { device.name }.getOrNull().orEmpty()
             PREFERRED_PHONE_NAMES.any { preferred ->
                 name.equals(preferred, ignoreCase = true)
@@ -315,7 +329,16 @@ class GlassesViewModel(
      */
     fun connectToDevice(device: BluetoothDevice) {
         Log.d(TAG, "Connecting to device: ${device.name}")
+        rememberPreferredPhone(device)
         bluetoothClient.connect(device)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun rememberPreferredPhone(device: BluetoothDevice) {
+        connectionPrefs.edit()
+            .putString(KEY_PREFERRED_PHONE_ADDRESS, device.address)
+            .putString(KEY_PREFERRED_PHONE_NAME, runCatching { device.name }.getOrNull())
+            .apply()
     }
     
     /**

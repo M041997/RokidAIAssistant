@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.util.Log
+import com.example.rokidphone.BuildConfig
 import com.rokid.cxr.client.extend.CxrApi
 import com.rokid.cxr.client.extend.callbacks.*
 import com.rokid.cxr.client.extend.listeners.AiEventListener
@@ -35,6 +36,10 @@ class CxrMobileManager(private val context: Context) {
         private const val INITIAL_RETRY_DELAY_MS = 5000L  // 5 seconds
         private const val MAX_RETRY_DELAY_MS = 60000L     // 60 seconds
         private const val DEINIT_SETTLE_DELAY_MS = 300L    // Delay between explicit deinit and re-init
+        private const val PREFS_NAME = "cxr_mobile_manager"
+        private const val KEY_GLASSES_SERIAL = "glasses_serial"
+        private const val KEY_LAST_GLASSES_NAME = "last_glasses_name"
+        private const val KEY_LAST_GLASSES_ADDRESS = "last_glasses_address"
         
         // Check if SDK is available
         fun isSdkAvailable(): Boolean {
@@ -97,6 +102,10 @@ class CxrMobileManager(private val context: Context) {
             Log.d(TAG, "CxrApi instance created: $it")
             Log.d(TAG, "SDK version: ${it.javaClass.simpleName}")
         }
+    }
+
+    private val prefs by lazy {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
     
     // Bluetooth status callback — guarded against null invocations.
@@ -219,6 +228,8 @@ class CxrMobileManager(private val context: Context) {
         retryCount = 0
         retryJob?.cancel()
         lastConnectedDevice = device
+        rememberGlassesDevice(device)
+        seedSerialFromBuildConfig()
         _bluetoothState.value = BluetoothState.Connecting
 
         // Launch the actual init on a background scope so we can use the mutex
@@ -276,12 +287,36 @@ class CxrMobileManager(private val context: Context) {
     private fun connectBluetooth(context: Context, socketUuid: String, macAddress: String) {
         try {
             Log.d(TAG, "Connecting Bluetooth: uuid=$socketUuid, mac=$macAddress")
+            val serial = storedGlassesSerial()
+            Log.d(TAG, "Glasses serial configured: ${serial != null}")
             // connectBluetooth parameters: context, socketUuid, macAddress, callback, secretKey, identifier
-            cxrApi.connectBluetooth(context, socketUuid, macAddress, bluetoothCallback, null, null)
+            cxrApi.connectBluetooth(context, socketUuid, macAddress, bluetoothCallback, null, serial)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to connect Bluetooth", e)
             _bluetoothState.value = BluetoothState.Failed(e.message ?: "Connection error")
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun rememberGlassesDevice(device: BluetoothDevice) {
+        prefs.edit()
+            .putString(KEY_LAST_GLASSES_NAME, runCatching { device.name }.getOrNull())
+            .putString(KEY_LAST_GLASSES_ADDRESS, device.address)
+            .apply()
+    }
+
+    private fun seedSerialFromBuildConfig() {
+        if (!prefs.getString(KEY_GLASSES_SERIAL, null).isNullOrBlank()) return
+        val serial = BuildConfig.ROKID_GLASSES_SERIAL.trim()
+        if (serial.isBlank()) return
+        prefs.edit().putString(KEY_GLASSES_SERIAL, serial).apply()
+        Log.d(TAG, "Seeded glasses serial from local build config")
+    }
+
+    private fun storedGlassesSerial(): String? {
+        return prefs.getString(KEY_GLASSES_SERIAL, null)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
     }
     
     /**
