@@ -424,6 +424,9 @@ A: Run scripts/update_glasses_apk.sh.
 
    If the APK is already built and you only need to refill the
    uploader form, run scripts/fill_rokid_uploader.sh.
+
+   To stage the separate glasses-menu Bluetooth launcher APK, run:
+   scripts/fill_bluetooth_launcher_apk.sh.
 ```
 
 ### Release Issues

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ROKID BLUETOOTH BLUE LIGHT ENABLED</string>
+    <string name="finding_glasses">Finding glasses...</string>
+    <string name="watch_for_blue_light">Watch for the blue light</string>
+    <string name="scan_from_pixel">Scan from Pixel 7 now</string>
+    <string name="bluetooth_permission_needed">Bluetooth permission needed</string>
+    <string name="grant_permission_hint">Grant permission, then scan from Pixel 7</string>
+    <string name="bluetooth_search_unavailable">Bluetooth search unavailable</string>
+    <string name="hardware_gesture_may_be_required">Rokid firmware may require the hardware gesture</string>
+</resources>

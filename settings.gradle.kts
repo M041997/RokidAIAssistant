@@ -39,3 +39,5 @@ include(":common") // Shared Modules (Communication Protocol, Constants)
 include(":phone-app") // Mobile App (AI Computation, Heavy Processing)
 
 include(":glasses-app") // Glasses App (Display, Input)
+
+include(":bluetooth-launcher-app") // Separate glasses launcher entry for Bluetooth search mode

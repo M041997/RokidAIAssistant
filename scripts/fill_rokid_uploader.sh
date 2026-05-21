@@ -15,6 +15,17 @@ tap_upload=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --apk-path)
+            APK_PATH="$2"
+            APK_FILE_NAME="$(basename "$APK_PATH")"
+            DEVICE_APK_PATH="/sdcard/Download/$APK_FILE_NAME"
+            shift
+            ;;
+        --device-apk-path)
+            DEVICE_APK_PATH="$2"
+            APK_FILE_NAME="$(basename "$DEVICE_APK_PATH")"
+            shift
+            ;;
         --no-launch)
             launch_uploader=false
             ;;
