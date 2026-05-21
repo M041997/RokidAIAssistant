@@ -11,7 +11,7 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:31 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:42 CDT`
 
 Current working state:
 
@@ -25,7 +25,7 @@ Current working state:
 - Phone app auto-connects to the Pixel 7 path used during testing.
 - Photo translation works best in light mode / readable screen conditions.
 - Photo translation now keeps the whole wearer view on the glasses, then the phone rotates the frame, detects the bright readable screen/object region, crops/enhances/upscales it, and saves `latest_photo_translation_analyzed.jpg` for debugging.
-- Photo/live translation model inputs now include a full detected readable surface plus an enlarged center crop of the same surface so normal sitting-distance text has both context and a zoomed reading view.
+- Photo/live translation model inputs now include a full detected readable surface plus an enlarged dense text-cluster crop, with center crop fallback, so normal sitting-distance text has both context and a zoomed reading view.
 - Photo translation prompt now asks the model to identify the main readable surface first and translate partially readable text instead of falling back too quickly to `No translatable text visible`.
 - Photo translation pagination/auto-advance feels good in testing.
 - Live visual translation works for Japanese and Spanish to English when the frame is readable.
@@ -38,7 +38,7 @@ What we are testing next:
 
 1. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm blue light -> uploader finds glasses.
 2. Upload the newly staged glasses APK from the Pixel uploader.
-3. Re-check live translation from normal sitting distance with light-mode screen text and confirm it no longer falls back too quickly to `No translatable text visible`.
+3. Re-check live/photo translation from normal sitting distance with light-mode screen text and confirm the dense text-cluster crop helps avoid `No translatable text visible`.
 4. Re-check that live translation makes another API call after the reading timer ends.
 5. Re-check live translation to English with Japanese and Spanish, since that path was already good before the ROI/object crop change.
 6. Decide whether to keep tuning photo/live crop/upscale or move on to spatial text overlay research.

@@ -1376,7 +1376,7 @@ class PhoneAIService : Service() {
 
     private fun buildReadableSurfaceAnalysisBitmap(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
         val fullSurface = scaleForReadableTextSurface(bitmap)
-        val zoomSource = createReadableCenterCrop(bitmap)
+        val zoomSource = createReadableTextClusterCrop(bitmap) ?: createReadableCenterCrop(bitmap)
         val zoomSurface = scaleForReadableTextSurface(zoomSource)
         val separatorHeight = 16
         val targetWidth = maxOf(fullSurface.width, zoomSurface.width)
@@ -1406,6 +1406,21 @@ class PhoneAIService : Service() {
         return result
     }
 
+    private fun createReadableTextClusterCrop(bitmap: android.graphics.Bitmap): android.graphics.Bitmap? {
+        val region = detectDenseTextRegion(bitmap) ?: return null
+        if (region.width() < bitmap.width * 0.12f || region.height() < bitmap.height * 0.04f) {
+            return null
+        }
+
+        return android.graphics.Bitmap.createBitmap(
+            bitmap,
+            region.left,
+            region.top,
+            region.width(),
+            region.height()
+        )
+    }
+
     private fun createReadableCenterCrop(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
         val width = bitmap.width
         val height = bitmap.height
@@ -1420,6 +1435,214 @@ class PhoneAIService : Service() {
         if (cropWidth < width * 0.35f || cropHeight < height * 0.25f) return bitmap
 
         return android.graphics.Bitmap.createBitmap(bitmap, left, top, cropWidth, cropHeight)
+    }
+
+    private fun detectDenseTextRegion(bitmap: android.graphics.Bitmap): android.graphics.Rect? {
+        val width = bitmap.width
+        val height = bitmap.height
+        val maxSide = 520
+        val sampleScale = minOf(
+            1f,
+            maxSide.toFloat() / width.toFloat(),
+            maxSide.toFloat() / height.toFloat()
+        )
+        val sampleWidth = (width * sampleScale).toInt().coerceAtLeast(1)
+        val sampleHeight = (height * sampleScale).toInt().coerceAtLeast(1)
+        val sampleBitmap = if (sampleWidth == width && sampleHeight == height) {
+            bitmap
+        } else {
+            android.graphics.Bitmap.createScaledBitmap(bitmap, sampleWidth, sampleHeight, true)
+        }
+
+        val darkMask = BooleanArray(sampleWidth * sampleHeight)
+        val neighborhoodRadius = (sampleWidth / 160).coerceAtLeast(3)
+        var y = 0
+        while (y < sampleHeight) {
+            var x = 0
+            while (x < sampleWidth) {
+                val pixel = sampleBitmap.getPixel(x, y)
+                val luminance = pixelLuminance(pixel)
+                darkMask[y * sampleWidth + x] =
+                    luminance < 145f &&
+                        y > sampleHeight * 0.05f &&
+                        y < sampleHeight * 0.95f &&
+                        hasBrightNeighbor(sampleBitmap, x, y, neighborhoodRadius)
+                x++
+            }
+            y++
+        }
+
+        val dilatedMask = BooleanArray(darkMask.size)
+        val dilateX = (sampleWidth / 55).coerceAtLeast(3)
+        val dilateY = (sampleHeight / 95).coerceAtLeast(2)
+        y = 0
+        while (y < sampleHeight) {
+            var x = 0
+            while (x < sampleWidth) {
+                if (darkMask[y * sampleWidth + x]) {
+                    var yy = (y - dilateY).coerceAtLeast(0)
+                    val maxY = (y + dilateY).coerceAtMost(sampleHeight - 1)
+                    while (yy <= maxY) {
+                        var xx = (x - dilateX).coerceAtLeast(0)
+                        val maxX = (x + dilateX).coerceAtMost(sampleWidth - 1)
+                        while (xx <= maxX) {
+                            dilatedMask[yy * sampleWidth + xx] = true
+                            xx++
+                        }
+                        yy++
+                    }
+                }
+                x++
+            }
+            y++
+        }
+
+        val visited = BooleanArray(dilatedMask.size)
+        val queueX = IntArray(dilatedMask.size)
+        val queueY = IntArray(dilatedMask.size)
+        var bestScore = 0f
+        var bestMinX = 0
+        var bestMinY = 0
+        var bestMaxX = -1
+        var bestMaxY = -1
+        var bestPixels = 0
+
+        y = 0
+        while (y < sampleHeight) {
+            var x = 0
+            while (x < sampleWidth) {
+                val index = y * sampleWidth + x
+                if (dilatedMask[index] && !visited[index]) {
+                    var head = 0
+                    var tail = 0
+                    queueX[tail] = x
+                    queueY[tail] = y
+                    tail++
+                    visited[index] = true
+
+                    var minX = x
+                    var minY = y
+                    var maxX = x
+                    var maxY = y
+                    var pixels = 0
+
+                    while (head < tail) {
+                        val cx = queueX[head]
+                        val cy = queueY[head]
+                        head++
+                        pixels++
+                        minX = minOf(minX, cx)
+                        minY = minOf(minY, cy)
+                        maxX = maxOf(maxX, cx)
+                        maxY = maxOf(maxY, cy)
+
+                        var direction = 0
+                        while (direction < 4) {
+                            val nx = when (direction) {
+                                0 -> cx + 1
+                                1 -> cx - 1
+                                else -> cx
+                            }
+                            val ny = when (direction) {
+                                2 -> cy + 1
+                                3 -> cy - 1
+                                else -> cy
+                            }
+                            if (nx in 0 until sampleWidth && ny in 0 until sampleHeight) {
+                                val neighborIndex = ny * sampleWidth + nx
+                                if (dilatedMask[neighborIndex] && !visited[neighborIndex]) {
+                                    visited[neighborIndex] = true
+                                    queueX[tail] = nx
+                                    queueY[tail] = ny
+                                    tail++
+                                }
+                            }
+                            direction++
+                        }
+                    }
+
+                    val boxWidth = maxX - minX + 1
+                    val boxHeight = maxY - minY + 1
+                    val boxArea = boxWidth * boxHeight
+                    if (pixels > 40 &&
+                        boxArea > sampleWidth * sampleHeight * 0.0025f &&
+                        boxWidth > sampleWidth * 0.08f &&
+                        boxHeight > sampleHeight * 0.02f
+                    ) {
+                        val centerX = (minX + maxX) / 2f / sampleWidth
+                        val centerY = (minY + maxY) / 2f / sampleHeight
+                        val centralBonus = (1f - minOf(kotlin.math.abs(centerX - 0.55f), 0.55f) / 0.55f) * 900f
+                        val bottomPenalty = if (centerY > 0.78f) (centerY - 0.78f) * 2600f else 0f
+                        val topChromePenalty = if (centerY < 0.16f && boxHeight < sampleHeight * 0.09f) 700f else 0f
+                        val shapeBonus = if (boxWidth > sampleWidth * 0.22f && boxHeight > sampleHeight * 0.05f) 600f else 0f
+                        val score = pixels * 1.35f + boxArea * 0.16f + centralBonus + shapeBonus - bottomPenalty - topChromePenalty
+                        if (score > bestScore) {
+                            bestScore = score
+                            bestPixels = pixels
+                            bestMinX = minX
+                            bestMinY = minY
+                            bestMaxX = maxX
+                            bestMaxY = maxY
+                        }
+                    }
+                }
+                x++
+            }
+            y++
+        }
+
+        if (sampleBitmap != bitmap) {
+            sampleBitmap.recycle()
+        }
+
+        if (bestMaxX <= bestMinX || bestMaxY <= bestMinY) {
+            Log.d(TAG, "Readable text cluster ROI: no dense text cluster detected")
+            return null
+        }
+
+        val inverseScale = 1f / sampleScale
+        val minX = (bestMinX * inverseScale).toInt()
+        val minY = (bestMinY * inverseScale).toInt()
+        val maxX = ((bestMaxX + 1) * inverseScale).toInt().coerceAtMost(width)
+        val maxY = ((bestMaxY + 1) * inverseScale).toInt().coerceAtMost(height)
+        val boxWidth = maxX - minX
+        val boxHeight = maxY - minY
+        val padX = (boxWidth * 0.22f).toInt() + 30
+        val padY = (boxHeight * 0.45f).toInt() + 30
+        val rect = android.graphics.Rect(
+            (minX - padX).coerceAtLeast(0),
+            (minY - padY).coerceAtLeast(0),
+            (maxX + padX).coerceAtMost(width),
+            (maxY + padY).coerceAtMost(height)
+        )
+        Log.d(TAG, "Readable text cluster ROI: ${width}x${height} -> ${rect.width()}x${rect.height()} pixels=$bestPixels")
+        return rect
+    }
+
+    private fun pixelLuminance(pixel: Int): Float {
+        val red = android.graphics.Color.red(pixel)
+        val green = android.graphics.Color.green(pixel)
+        val blue = android.graphics.Color.blue(pixel)
+        return red * 0.299f + green * 0.587f + blue * 0.114f
+    }
+
+    private fun hasBrightNeighbor(
+        bitmap: android.graphics.Bitmap,
+        x: Int,
+        y: Int,
+        radius: Int
+    ): Boolean {
+        val width = bitmap.width
+        val height = bitmap.height
+        val left = (x - radius).coerceAtLeast(0)
+        val right = (x + radius).coerceAtMost(width - 1)
+        val top = (y - radius).coerceAtLeast(0)
+        val bottom = (y + radius).coerceAtMost(height - 1)
+        return pixelLuminance(bitmap.getPixel(left, top)) > 170f ||
+            pixelLuminance(bitmap.getPixel(right, top)) > 170f ||
+            pixelLuminance(bitmap.getPixel(left, bottom)) > 170f ||
+            pixelLuminance(bitmap.getPixel(right, bottom)) > 170f ||
+            pixelLuminance(bitmap.getPixel(x, y)) > 170f
     }
 
     private fun enhanceReadableTextSurface(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
@@ -1543,7 +1766,7 @@ class PhoneAIService : Service() {
 
         return "This is a live camera frame from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
             "Read $sourceText on that surface and translate it into natural English, even if the text is small, tilted, bright, or surrounded by dark background. " +
-            "The image may include both a full view and an enlarged crop of the same surface; use the clearest view and do not translate duplicate text twice. " +
+            "The image may include both a full view and an enlarged crop of the densest text cluster on the same surface; prioritize the crop when it is clearer and do not translate duplicate text twice. " +
             "Return only the English translation for the glasses display. " +
             "If there are multiple signs or lines, keep the same order and use short line breaks. " +
             "If some matching text is readable, translate the clear parts instead of saying there is no text. " +
@@ -1553,7 +1776,7 @@ class PhoneAIService : Service() {
     private fun buildPhotoTranslationPrompt(): String {
         return "This is a photo from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
             "Focus on the readable text inside that object even if it is small, tilted, bright, or surrounded by dark background. " +
-            "The image may include both a full view and an enlarged crop of the same surface; use the clearest view and do not translate duplicate text twice. " +
+            "The image may include both a full view and an enlarged crop of the densest text cluster on the same surface; prioritize the crop when it is clearer and do not translate duplicate text twice. " +
             "Read any visible non-English text, especially Japanese, Spanish, Chinese, Korean, German, or French, and translate it into natural English. " +
             "Return only the English translation for the glasses display. Preserve the order of lines with short line breaks. " +
             "If there is readable text but only part of it is clear, translate the clear parts and do not say there is no text. " +
