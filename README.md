@@ -26,6 +26,7 @@ Current working state:
 - Photo translation pagination/auto-advance feels good in testing.
 - Live visual translation works for Japanese and Spanish to English when the frame is readable.
 - Live visual translation now allows a new API call after the reading timer ends, even if the view is still stable/similar.
+- Edge TTS audio is routed to the glasses over Bluetooth and played by the glasses app instead of playing through the Pixel speaker.
 - Local backup zip was created and copied to the Expansion drive.
 
 What we are testing next:
@@ -312,6 +313,7 @@ Current checkpoint:
 - [x] Project zip backup copied to `/media/boss/Expansion/RokidAIAssistant_Backups/`
 - [x] Photo translation auto-page advance feels good
 - [x] Live translation reading timer no longer refreshes forever on the same stable view before rechecking
+- [x] Edge TTS playback is routed to glasses instead of Pixel speaker
 - [ ] Validate live-frame orientation and readability under normal wearing conditions
 - [ ] Test auto-detect translation on Japanese, Spanish, German, and French across Gemini and Qwen
 - [ ] Decide whether to tune zoom/crop/rotation after seeing new captured frames

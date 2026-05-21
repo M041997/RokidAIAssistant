@@ -857,8 +857,8 @@ class PhoneAIService : Service() {
                 payload = cleanedResult
             ))
             
-            // TTS voice playback
-            ttsService?.speak(cleanedResult) { }
+            // TTS voice playback on glasses
+            speakOnGlasses(cleanedResult)
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to analyze photo", e)
@@ -1410,8 +1410,8 @@ class PhoneAIService : Service() {
                 Log.e(TAG, "Failed to save glasses recording", e)
             }
             
-            // 7. TTS voice playback (optional)
-            ttsService?.speak(aiResponse) { }
+            // 7. TTS voice playback on glasses (optional)
+            speakOnGlasses(aiResponse)
             
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             // Service is being stopped, don't treat this as an error
@@ -1695,8 +1695,8 @@ class PhoneAIService : Service() {
             saveUserMessage(transcript)
             saveAssistantMessage(aiResponse, settings.aiModelId)
             
-            // 8. TTS playback (optional)
-            ttsService?.speak(aiResponse) { }
+            // 8. TTS playback on glasses (optional)
+            speakOnGlasses(aiResponse)
             
             Log.d(TAG, "Phone recording processed successfully: $recordingId")
             updatePipeline(
@@ -2194,6 +2194,19 @@ class PhoneAIService : Service() {
         
         return migratedSettings
     }
+
+    private fun speakOnGlasses(text: String) {
+        ttsService?.speak(text) { audioData ->
+            serviceScope.launch {
+                val sent = bluetoothManager?.sendMessage(Message.aiResponseTts(audioData)) == true
+                if (sent) {
+                    Log.d(TAG, "Sent TTS audio to glasses: ${audioData.size} bytes")
+                } else {
+                    Log.w(TAG, "Unable to send TTS audio to glasses")
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -2294,9 +2307,6 @@ class TextToSpeechService(private val context: android.content.Context) {
                 result.onSuccess { audioData ->
                     if (audioData.isNotEmpty()) {
                         onAudioChunk(audioData)
-                        withContext(mainDispatcher) {
-                            playAudioData(audioData)
-                        }
                     } else {
                         android.util.Log.w(TAG, "Edge TTS returned empty data, falling back to system TTS")
                         withContext(mainDispatcher) { speakWithSystemTts(text, settings) }
@@ -2351,30 +2361,6 @@ class TextToSpeechService(private val context: android.content.Context) {
         tts?.setPitch(settings?.systemTtsPitch ?: 1.0f)
         val cleaned = sanitizeForTts(text, locale)
         tts?.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
-    }
-
-    // ── Audio playback ───────────────────────────────────
-
-    private fun playAudioData(audioData: ByteArray) {
-        try {
-            val tempFile = java.io.File.createTempFile("tts_", ".mp3", context.cacheDir)
-            java.io.FileOutputStream(tempFile).use { it.write(audioData) }
-            android.media.MediaPlayer().apply {
-                setDataSource(tempFile.absolutePath)
-                setAudioAttributes(
-                    android.media.AudioAttributes.Builder()
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
-                        .build()
-                )
-                setOnCompletionListener { mp -> mp.release(); tempFile.delete() }
-                setOnErrorListener { mp, _, _ -> mp.release(); tempFile.delete(); true }
-                prepare()
-                start()
-            }
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to play audio", e)
-        }
     }
 
     // ── Lifecycle ────────────────────────────────────────

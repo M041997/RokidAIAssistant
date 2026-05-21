@@ -8,8 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Build
 import android.util.Log
@@ -136,6 +138,7 @@ class GlassesViewModel(
     
     // Audio buffer - collects recording data
     private val audioBuffer = ByteArrayOutputStream()
+    private var currentTtsPlayer: MediaPlayer? = null
 
     private data class AudioRecordSetup(
         val audioRecord: AudioRecord,
@@ -946,8 +949,55 @@ class GlassesViewModel(
     }
     
     private fun playAudio(audioData: ByteArray) {
-        // TODO: Use AudioTrack to play audio
-        Log.d(TAG, "Playing audio: ${audioData.size} bytes")
+        Log.d(TAG, "Playing TTS audio on glasses: ${audioData.size} bytes")
+        viewModelScope.launch(Dispatchers.IO) {
+            val tempFile = runCatching {
+                java.io.File.createTempFile("glasses_tts_", ".mp3", context.cacheDir).apply {
+                    writeBytes(audioData)
+                }
+            }.getOrElse { e ->
+                Log.e(TAG, "Failed to write TTS audio temp file", e)
+                return@launch
+            }
+
+            withContext(Dispatchers.Main) {
+                try {
+                    currentTtsPlayer?.release()
+                    currentTtsPlayer = MediaPlayer().apply {
+                        setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                                .build()
+                        )
+                        setDataSource(tempFile.absolutePath)
+                        setOnCompletionListener { player ->
+                            player.release()
+                            if (currentTtsPlayer === player) {
+                                currentTtsPlayer = null
+                            }
+                            tempFile.delete()
+                        }
+                        setOnErrorListener { player, what, extra ->
+                            Log.e(TAG, "TTS playback error on glasses: what=$what extra=$extra")
+                            player.release()
+                            if (currentTtsPlayer === player) {
+                                currentTtsPlayer = null
+                            }
+                            tempFile.delete()
+                            true
+                        }
+                        prepare()
+                        start()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to play TTS audio on glasses", e)
+                    currentTtsPlayer?.release()
+                    currentTtsPlayer = null
+                    tempFile.delete()
+                }
+            }
+        }
     }
     
     /**
@@ -1121,6 +1171,8 @@ class GlassesViewModel(
     override fun onCleared() {
         super.onCleared()
         autoPageAdvanceJob?.cancel()
+        currentTtsPlayer?.release()
+        currentTtsPlayer = null
         recordingJob?.cancel()
         videoStreamingJob?.cancel()
         audioRecord?.release()
