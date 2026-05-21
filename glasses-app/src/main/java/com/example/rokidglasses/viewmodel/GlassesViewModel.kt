@@ -160,8 +160,8 @@ class GlassesViewModel(
     // Video streaming frame rate control (milliseconds)
     private val videoFrameIntervalMs = 1000L  // ~1fps
     
-    // Live translation should match the user's central field of view, not the full wide camera frame.
-    private val visualTranslationFrameZoom = 2.0f
+    // Live translation keeps the wearer view; the phone detects and crops the readable screen/object ROI.
+    private val visualTranslationFrameZoom = 1.0f
 
     // Photo translation keeps the whole wearer view; the phone detects and crops the screen/text ROI.
     private val photoTranslationZoom = 1.0f

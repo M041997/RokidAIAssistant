@@ -1008,11 +1008,12 @@ class PhoneAIService : Service() {
                 } else {
                     settings.aiProvider.name
                 }
-                val analysisFrameData = if (settings.aiProvider == AiProvider.CUSTOM) {
+                val orientedFrameData = if (settings.aiProvider == AiProvider.CUSTOM) {
                     rotateJpegFrame(frameData, CUSTOM_VISUAL_TRANSLATION_ROTATION_DEGREES)
                 } else {
                     frameData
                 }
+                val analysisFrameData = prepareVisualTranslationImage(orientedFrameData)
                 val visualLanguage = settings.visualTranslationSourceLanguage
                 val analyzedFramePath = saveLatestVisualTranslationFrame(analysisFrameData, "latest_analyzed.jpg")
                 val analyzedFrameMeta = visualTranslationFrameMeta(analysisFrameData)
@@ -1164,7 +1165,7 @@ class PhoneAIService : Service() {
 
     private fun preparePhotoTranslationImage(photoData: ByteArray): ByteArray {
         val rotated = rotateJpegFrame(photoData, -90)
-        val analyzed = extractAndEnhancePhotoTranslationRoi(rotated)
+        val analyzed = extractAndEnhanceReadableSurfaceRoi(rotated, "Photo translation")
         saveLatestVisualTranslationFrame(analyzed, "latest_photo_translation_analyzed.jpg")
         Log.d(
             TAG,
@@ -1175,7 +1176,17 @@ class PhoneAIService : Service() {
         return analyzed
     }
 
-    private fun extractAndEnhancePhotoTranslationRoi(photoData: ByteArray): ByteArray {
+    private fun prepareVisualTranslationImage(frameData: ByteArray): ByteArray {
+        val analyzed = extractAndEnhanceReadableSurfaceRoi(frameData, "Live visual translation")
+        Log.d(
+            TAG,
+            "Live visual translation model input prepared: oriented=${visualTranslationFrameMeta(frameData)} " +
+                "analyzed=${visualTranslationFrameMeta(analyzed)}"
+        )
+        return analyzed
+    }
+
+    private fun extractAndEnhanceReadableSurfaceRoi(photoData: ByteArray, label: String): ByteArray {
         return try {
             val bitmap = BitmapFactory.decodeByteArray(photoData, 0, photoData.size) ?: return photoData
             val screenBox = detectBrightScreenRegion(bitmap)
@@ -1190,8 +1201,8 @@ class PhoneAIService : Service() {
             } else {
                 bitmap
             }
-            val scaled = scaleForPhotoTranslation(cropped)
-            val enhanced = enhancePhotoTranslationBitmap(scaled)
+            val scaled = scaleForReadableTextSurface(cropped)
+            val enhanced = enhanceReadableTextSurface(scaled)
             ByteArrayOutputStream().use { output ->
                 enhanced.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, output)
                 if (bitmap != cropped) bitmap.recycle()
@@ -1201,7 +1212,7 @@ class PhoneAIService : Service() {
                 output.toByteArray()
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to prepare photo translation ROI", e)
+            Log.w(TAG, "Failed to prepare $label ROI", e)
             photoData
         }
     }
@@ -1209,49 +1220,138 @@ class PhoneAIService : Service() {
     private fun detectBrightScreenRegion(bitmap: android.graphics.Bitmap): android.graphics.Rect? {
         val width = bitmap.width
         val height = bitmap.height
-        val step = (minOf(width, height) / 220).coerceAtLeast(2)
-        var minX = width
-        var minY = height
-        var maxX = -1
-        var maxY = -1
-        var brightSamples = 0
+        val maxSide = 360
+        val sampleScale = minOf(
+            1f,
+            maxSide.toFloat() / width.toFloat(),
+            maxSide.toFloat() / height.toFloat()
+        )
+        val sampleWidth = (width * sampleScale).toInt().coerceAtLeast(1)
+        val sampleHeight = (height * sampleScale).toInt().coerceAtLeast(1)
+        val sampleBitmap = if (sampleWidth == width && sampleHeight == height) {
+            bitmap
+        } else {
+            android.graphics.Bitmap.createScaledBitmap(bitmap, sampleWidth, sampleHeight, true)
+        }
 
+        val brightMask = BooleanArray(sampleWidth * sampleHeight)
         var y = 0
-        while (y < height) {
+        while (y < sampleHeight) {
             var x = 0
-            while (x < width) {
-                val pixel = bitmap.getPixel(x, y)
+            while (x < sampleWidth) {
+                val pixel = sampleBitmap.getPixel(x, y)
                 val red = android.graphics.Color.red(pixel)
                 val green = android.graphics.Color.green(pixel)
                 val blue = android.graphics.Color.blue(pixel)
                 val luminance = (red * 0.299f + green * 0.587f + blue * 0.114f)
                 val channelSpread = maxOf(red, green, blue) - minOf(red, green, blue)
-                if (luminance > 145f && channelSpread < 80) {
-                    brightSamples++
-                    minX = minOf(minX, x)
-                    minY = minOf(minY, y)
-                    maxX = maxOf(maxX, x)
-                    maxY = maxOf(maxY, y)
-                }
-                x += step
+                brightMask[y * sampleWidth + x] = luminance > 145f && channelSpread < 90
+                x++
             }
-            y += step
+            y++
         }
 
-        if (brightSamples < 80 || maxX <= minX || maxY <= minY) {
-            Log.d(TAG, "Photo translation ROI: no bright screen region detected")
+        val visited = BooleanArray(brightMask.size)
+        val queueX = IntArray(brightMask.size)
+        val queueY = IntArray(brightMask.size)
+        var bestScore = 0f
+        var bestMinX = 0
+        var bestMinY = 0
+        var bestMaxX = -1
+        var bestMaxY = -1
+        var bestPixels = 0
+
+        y = 0
+        while (y < sampleHeight) {
+            var x = 0
+            while (x < sampleWidth) {
+                val index = y * sampleWidth + x
+                if (brightMask[index] && !visited[index]) {
+                    var head = 0
+                    var tail = 0
+                    queueX[tail] = x
+                    queueY[tail] = y
+                    tail++
+                    visited[index] = true
+
+                    var minX = x
+                    var minY = y
+                    var maxX = x
+                    var maxY = y
+                    var pixels = 0
+
+                    while (head < tail) {
+                        val cx = queueX[head]
+                        val cy = queueY[head]
+                        head++
+                        pixels++
+                        minX = minOf(minX, cx)
+                        minY = minOf(minY, cy)
+                        maxX = maxOf(maxX, cx)
+                        maxY = maxOf(maxY, cy)
+
+                        var direction = 0
+                        while (direction < 4) {
+                            val nx = when (direction) {
+                                0 -> cx + 1
+                                1 -> cx - 1
+                                else -> cx
+                            }
+                            val ny = when (direction) {
+                                2 -> cy + 1
+                                3 -> cy - 1
+                                else -> cy
+                            }
+                            if (nx in 0 until sampleWidth && ny in 0 until sampleHeight) {
+                                val neighborIndex = ny * sampleWidth + nx
+                                if (brightMask[neighborIndex] && !visited[neighborIndex]) {
+                                    visited[neighborIndex] = true
+                                    queueX[tail] = nx
+                                    queueY[tail] = ny
+                                    tail++
+                                }
+                            }
+                            direction++
+                        }
+                    }
+
+                    val boxWidth = maxX - minX + 1
+                    val boxHeight = maxY - minY + 1
+                    val boxArea = boxWidth * boxHeight
+                    val minSurfaceArea = sampleWidth * sampleHeight * 0.035f
+                    if (pixels > 60 && boxArea > minSurfaceArea) {
+                        val score = pixels + boxArea * 0.25f
+                        if (score > bestScore) {
+                            bestScore = score
+                            bestPixels = pixels
+                            bestMinX = minX
+                            bestMinY = minY
+                            bestMaxX = maxX
+                            bestMaxY = maxY
+                        }
+                    }
+                }
+                x++
+            }
+            y++
+        }
+
+        if (sampleBitmap != bitmap) {
+            sampleBitmap.recycle()
+        }
+
+        if (bestMaxX <= bestMinX || bestMaxY <= bestMinY) {
+            Log.d(TAG, "Readable surface ROI: no connected bright screen/object region detected")
             return null
         }
 
+        val inverseScale = 1f / sampleScale
+        val minX = (bestMinX * inverseScale).toInt()
+        val minY = (bestMinY * inverseScale).toInt()
+        val maxX = ((bestMaxX + 1) * inverseScale).toInt().coerceAtMost(width)
+        val maxY = ((bestMaxY + 1) * inverseScale).toInt().coerceAtMost(height)
         val boxWidth = maxX - minX
         val boxHeight = maxY - minY
-        val boxArea = boxWidth * boxHeight
-        val imageArea = width * height
-        if (boxArea < imageArea * 0.08f) {
-            Log.d(TAG, "Photo translation ROI too small: ${boxWidth}x${boxHeight}")
-            return null
-        }
-
         val padX = (boxWidth * 0.06f).toInt() + 20
         val padY = (boxHeight * 0.06f).toInt() + 20
         val rect = android.graphics.Rect(
@@ -1260,11 +1360,11 @@ class PhoneAIService : Service() {
             (maxX + padX).coerceAtMost(width),
             (maxY + padY).coerceAtMost(height)
         )
-        Log.d(TAG, "Photo translation ROI: ${width}x${height} -> ${rect.width()}x${rect.height()}")
+        Log.d(TAG, "Readable surface ROI: ${width}x${height} -> ${rect.width()}x${rect.height()} pixels=$bestPixels")
         return rect
     }
 
-    private fun scaleForPhotoTranslation(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
+    private fun scaleForReadableTextSurface(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
         val targetWidth = 1600
         val width = bitmap.width
         val height = bitmap.height
@@ -1274,7 +1374,7 @@ class PhoneAIService : Service() {
         return android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
     }
 
-    private fun enhancePhotoTranslationBitmap(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
+    private fun enhanceReadableTextSurface(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
         val result = android.graphics.Bitmap.createBitmap(bitmap.width, bitmap.height, android.graphics.Bitmap.Config.ARGB_8888)
         val contrast = 1.25f
         val translate = (-0.5f * contrast + 0.5f) * 255f
@@ -1393,10 +1493,12 @@ class PhoneAIService : Service() {
             "No ${VisualTranslationLanguages.displayName(sourceLanguageCode)} text visible."
         }
 
-        return "Read $sourceText in this image and translate it into natural English. " +
+        return "This is a live camera frame from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
+            "Read $sourceText on that surface and translate it into natural English, even if the text is small, tilted, bright, or surrounded by dark background. " +
             "Return only the English translation for the glasses display. " +
             "If there are multiple signs or lines, keep the same order and use short line breaks. " +
-            "If no matching text is visible, say: $noTextMessage"
+            "If some matching text is readable, translate the clear parts instead of saying there is no text. " +
+            "Only if no matching text is truly readable, say: $noTextMessage"
     }
 
     private fun buildPhotoTranslationPrompt(): String {

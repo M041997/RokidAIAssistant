@@ -11,12 +11,12 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:08 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:12 CDT`
 
 Current working state:
 
 - Current branch: `live-translation-frame-debug`.
-- Latest pushed remote checkpoint on `m041997/live-translation-frame-debug` includes the photo translation ROI/object crop fix.
+- Latest pushed remote checkpoint on `m041997/live-translation-frame-debug` includes photo and live translation readable-surface ROI/object crop fixes.
 - Rokid AI on the glasses is back to normal.
 - Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
 - Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Finding glasses...`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
@@ -28,16 +28,18 @@ Current working state:
 - Photo translation pagination/auto-advance feels good in testing.
 - Live visual translation works for Japanese and Spanish to English when the frame is readable.
 - Live visual translation now allows a new API call after the reading timer ends, even if the view is still stable/similar.
+- Live visual translation now keeps the whole wearer view on the glasses, then the phone finds the largest connected bright readable surface, crops/enhances/upscales it, and prompts the model to identify the screen/sign/page before translating.
 - Edge TTS audio is routed to the glasses over Bluetooth and played by the glasses app instead of playing through the Pixel speaker.
 - Local backup zip was created and copied to the Expansion drive.
 
 What we are testing next:
 
 1. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm blue light -> uploader finds glasses.
-2. Upload the newly staged glasses APK from the Pixel uploader, then review photo translation under normal sitting distance and light-mode screen conditions.
-3. Re-check that live translation makes another API call after the reading timer ends.
-4. Re-check live translation to English with Japanese and Spanish, since that path is currently good enough.
-5. Decide whether to keep tuning photo crop/upscale or move on to spatial text overlay research.
+2. Upload the newly staged glasses APK from the Pixel uploader.
+3. Re-check live translation from normal sitting distance with light-mode screen text and confirm it no longer falls back too quickly to `No translatable text visible`.
+4. Re-check that live translation makes another API call after the reading timer ends.
+5. Re-check live translation to English with Japanese and Spanish, since that path was already good before the ROI/object crop change.
+6. Decide whether to keep tuning photo/live crop/upscale or move on to spatial text overlay research.
 
 Notes:
 
