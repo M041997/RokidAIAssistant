@@ -16,7 +16,7 @@ Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:08 CD
 Current working state:
 
 - Current branch: `live-translation-frame-debug`.
-- Latest pushed remote checkpoint before the current photo-mode patch: `ead4b74 Route TTS playback to glasses`.
+- Latest pushed remote checkpoint on `m041997/live-translation-frame-debug` includes the photo translation ROI/object crop fix.
 - Rokid AI on the glasses is back to normal.
 - Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
 - Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Finding glasses...`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
