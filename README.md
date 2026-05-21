@@ -421,6 +421,9 @@ A: Run scripts/update_glasses_apk.sh.
    /sdcard/Download/glasses-app-debug.apk
    Then it launches RokidApkUploader, selects the APK, and fills
    the serial number from debug_frames/rokid_serial.txt.
+
+   If the APK is already built and you only need to refill the
+   uploader form, run scripts/fill_rokid_uploader.sh.
 ```
 
 ### Release Issues
