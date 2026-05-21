@@ -89,6 +89,10 @@ class GlassesViewModel(
         private const val VISUAL_TRANSLATION_FRAME_TARGET_WIDTH = 960
         private const val VISUAL_TRANSLATION_FRAME_TARGET_HEIGHT = 720
         private const val VISUAL_TRANSLATION_FRAME_QUALITY = 75
+        private const val PHOTO_TRANSLATION_TARGET_WIDTH = 1280
+        private const val PHOTO_TRANSLATION_TARGET_HEIGHT = 720
+        private const val PHOTO_TRANSLATION_QUALITY = 85
+        private const val PHOTO_TRANSLATION_MAX_SIZE_BYTES = 400 * 1024
         private val PREFERRED_PHONE_NAMES = listOf("Pixel 7", "Pixel_7")
     }
     
@@ -146,6 +150,9 @@ class GlassesViewModel(
     
     // Live translation should match the user's central field of view, not the full wide camera frame.
     private val visualTranslationFrameZoom = 2.0f
+
+    // Photo translation uses a modest center crop, then upscales back to 720p for better text readability.
+    private val photoTranslationZoom = 1.5f
 
     // Rokid camera frames arrive in sensor orientation, which is sideways relative to the wearer view.
     private val visualTranslationFrameRotationDegrees = 180
@@ -1194,9 +1201,22 @@ class GlassesViewModel(
                 // Step 2: Compress photo
                 _uiState.update { it.copy(displayText = context.getString(R.string.compressing_photo)) }
                 val compressedData = withContext(Dispatchers.Default) {
-                    ImageCompressor.compressForTransfer(rawImageData)
+                    ImageCompressor.compressForTransfer(
+                        rawImageData,
+                        targetWidth = PHOTO_TRANSLATION_TARGET_WIDTH,
+                        targetHeight = PHOTO_TRANSLATION_TARGET_HEIGHT,
+                        quality = PHOTO_TRANSLATION_QUALITY,
+                        maxSize = PHOTO_TRANSLATION_MAX_SIZE_BYTES,
+                        centerCropToTargetAspect = true,
+                        zoomFactor = photoTranslationZoom
+                    )
                 }
-                Log.d(TAG, "Compressed: ${rawImageData.size} -> ${compressedData.size} bytes")
+                Log.d(
+                    TAG,
+                    "Photo translation prepared: ${rawImageData.size} -> ${compressedData.size} bytes " +
+                        "target=${PHOTO_TRANSLATION_TARGET_WIDTH}x${PHOTO_TRANSLATION_TARGET_HEIGHT} " +
+                        "zoom=$photoTranslationZoom"
+                )
                 
                 // Step 3: Send to phone
                 _uiState.update { it.copy(

@@ -823,13 +823,17 @@ class PhoneAIService : Service() {
             val prompt = when (analysisMode) {
                 PhotoAnalysisMode.DESCRIPTION -> getString(R.string.image_analysis_prompt)
                 PhotoAnalysisMode.VISUAL_TRANSLATION -> buildVisualTranslationPrompt(
-                    SettingsRepository.getInstance(this).getSettings().visualTranslationSourceLanguage
+                    VisualTranslationLanguages.AUTO
                 )
+            }
+            val analysisPhotoBytes = when (analysisMode) {
+                PhotoAnalysisMode.DESCRIPTION -> photoBytes
+                PhotoAnalysisMode.VISUAL_TRANSLATION -> preparePhotoTranslationImage(photoBytes)
             }
             
             // Use AI service to analyze the image with the selected prompt
             val analysisResult = aiService?.analyzeImage(
-                photoBytes, 
+                analysisPhotoBytes,
                 prompt
             ) ?: getString(R.string.ai_analysis_unavailable)
             
@@ -1160,6 +1164,17 @@ class PhoneAIService : Service() {
             Log.w(TAG, "Failed to rotate custom visual translation frame", e)
             frameData
         }
+    }
+
+    private fun preparePhotoTranslationImage(photoData: ByteArray): ByteArray {
+        val rotated = rotateJpegFrame(photoData, -90)
+        saveLatestVisualTranslationFrame(rotated, "latest_photo_translation_analyzed.jpg")
+        Log.d(
+            TAG,
+            "Photo translation model input prepared: raw=${visualTranslationFrameMeta(photoData)} " +
+                "analyzed=${visualTranslationFrameMeta(rotated)}"
+        )
+        return rotated
     }
 
     private fun visualTranslationFrameHash(frameData: ByteArray): Long? {
