@@ -1,9 +1,11 @@
 package com.example.rokidglasses.viewmodel
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -31,6 +33,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 
 data class GlassesUiState(
@@ -79,6 +83,13 @@ class GlassesViewModel(
         private const val MAX_CHARS_PER_PAGE = 120
         private const val MAX_LINES_PER_PAGE = 4
         private const val AUDIO_DIAGNOSTIC_INTERVAL_MS = 1000L
+        private const val VIDEO_FRAME_TARGET_WIDTH = 640
+        private const val VIDEO_FRAME_TARGET_HEIGHT = 480
+        private const val VIDEO_FRAME_QUALITY = 50
+        private const val VISUAL_TRANSLATION_FRAME_TARGET_WIDTH = 960
+        private const val VISUAL_TRANSLATION_FRAME_TARGET_HEIGHT = 720
+        private const val VISUAL_TRANSLATION_FRAME_QUALITY = 75
+        private val PREFERRED_PHONE_NAMES = listOf("Pixel 7", "Pixel_7")
     }
     
     private val _uiState = MutableStateFlow(GlassesUiState(
@@ -107,6 +118,8 @@ class GlassesViewModel(
     
     // Photo transfer protocol
     private var photoTransferProtocol: PhotoTransferProtocol? = null
+    private var preferredPhoneAutoConnectAttempted = false
+    private val cameraCaptureMutex = Mutex()
     
     // Audio buffer - collects recording data
     private val audioBuffer = ByteArrayOutputStream()
@@ -131,9 +144,6 @@ class GlassesViewModel(
     // Video streaming frame rate control (milliseconds)
     private val videoFrameIntervalMs = 1000L  // ~1fps
     
-    // Video streaming JPEG compression quality (0-100)
-    private val videoFrameQuality = 50
-
     // Live translation should match the user's central field of view, not the full wide camera frame.
     private val visualTranslationFrameZoom = 2.0f
 
@@ -242,8 +252,9 @@ class GlassesViewModel(
             }
         }
         
-        // Get paired devices
+        // Get paired devices and default to the Pixel 7 during active testing.
         refreshPairedDevices()
+        connectToPreferredPhoneIfAvailable(autoConnect = true)
     }
     
     /**
@@ -253,6 +264,43 @@ class GlassesViewModel(
         val devices = bluetoothClient.getPairedDevices()
         _uiState.update { it.copy(availableDevices = devices) }
         Log.d(TAG, "Found ${devices.size} paired devices")
+    }
+
+    /**
+     * Temporary testing shortcut: prefer the paired Pixel 7 instead of showing
+     * the phone selector every time.
+     */
+    @SuppressLint("MissingPermission")
+    fun connectToPreferredPhoneIfAvailable(autoConnect: Boolean = false): Boolean {
+        if (autoConnect && preferredPhoneAutoConnectAttempted) {
+            return false
+        }
+        if (_uiState.value.bluetoothState != BluetoothClientState.DISCONNECTED) {
+            return true
+        }
+
+        val devices = bluetoothClient.getPairedDevices()
+        _uiState.update { it.copy(availableDevices = devices) }
+
+        val preferredDevice = devices.firstOrNull { device ->
+            val name = runCatching { device.name }.getOrNull().orEmpty()
+            PREFERRED_PHONE_NAMES.any { preferred ->
+                name.equals(preferred, ignoreCase = true)
+            }
+        }
+
+        if (autoConnect) {
+            preferredPhoneAutoConnectAttempted = true
+        }
+
+        return if (preferredDevice != null) {
+            Log.d(TAG, "Defaulting glasses connection to preferred phone: ${preferredDevice.name}")
+            connectToDevice(preferredDevice)
+            true
+        } else {
+            Log.w(TAG, "Preferred phone Pixel 7 not found in paired devices")
+            false
+        }
     }
     
     /**
@@ -969,7 +1017,8 @@ class GlassesViewModel(
      * Notes:
      * - Requires CAMERA permission
      * - Uses Camera2 API (UnifiedCameraManager)
-     * - JPEG compression quality reduced to 50% to reduce Bluetooth bandwidth
+     * - Gemini Live frames stay small to protect Bluetooth bandwidth
+     * - Visual translation frames use a larger/cleaner JPEG for OCR readability
      * - Errors won't interrupt streaming, only logged
      */
     private fun startVideoStreaming() {
@@ -983,30 +1032,56 @@ class GlassesViewModel(
             return
         }
         
-        Log.d(TAG, "Starting video frame streaming (~1fps, quality=$videoFrameQuality)")
+        Log.d(TAG, "Starting video frame streaming (~1fps)")
         
         videoStreamingJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive && (isLiveModeActive || isVisualTranslationActive)) {
                 try {
                     // Capture one camera frame
-                    val rawImageData = cameraManager?.capturePhoto()
+                    val rawImageData = cameraCaptureMutex.withLock {
+                        cameraManager?.capturePhoto()
+                    }
                     
                     if (rawImageData != null) {
-                        // Compress to low-quality JPEG to reduce transfer size (video frames use smaller dimensions)
+                        val rawDimensions = jpegDimensions(rawImageData)
                         val compressedFrame = withContext(Dispatchers.Default) {
                             val shouldZoomFrame = isVisualTranslationActive
                             ImageCompressor.compressForTransfer(
                                 rawImageData,
-                                targetWidth = 640,
-                                targetHeight = 480,
-                                quality = videoFrameQuality,
+                                targetWidth = if (shouldZoomFrame) {
+                                    VISUAL_TRANSLATION_FRAME_TARGET_WIDTH
+                                } else {
+                                    VIDEO_FRAME_TARGET_WIDTH
+                                },
+                                targetHeight = if (shouldZoomFrame) {
+                                    VISUAL_TRANSLATION_FRAME_TARGET_HEIGHT
+                                } else {
+                                    VIDEO_FRAME_TARGET_HEIGHT
+                                },
+                                quality = if (shouldZoomFrame) {
+                                    VISUAL_TRANSLATION_FRAME_QUALITY
+                                } else {
+                                    VIDEO_FRAME_QUALITY
+                                },
                                 centerCropToTargetAspect = shouldZoomFrame,
                                 zoomFactor = if (shouldZoomFrame) visualTranslationFrameZoom else 1.0f,
                                 rotationDegrees = if (shouldZoomFrame) visualTranslationFrameRotationDegrees else 0
                             )
                         }
-                        
-                        Log.d(TAG, "Video frame captured: ${compressedFrame.size} bytes")
+
+                        if (isVisualTranslationActive) {
+                            saveLatestVisualTranslationSentFrame(compressedFrame)
+                        }
+
+                        val compressedDimensions = jpegDimensions(compressedFrame)
+                        Log.d(
+                            TAG,
+                            "Video frame prepared: mode=${if (isVisualTranslationActive) "visual_translation" else "live"} " +
+                                "raw=${rawDimensions ?: "unknown"} rawBytes=${rawImageData.size} " +
+                                "out=${compressedDimensions ?: "unknown"} outBytes=${compressedFrame.size} " +
+                                "zoom=${if (isVisualTranslationActive) visualTranslationFrameZoom else 1.0f} " +
+                                "rotation=${if (isVisualTranslationActive) visualTranslationFrameRotationDegrees else 0}"
+                        )
                         
                         // Send VIDEO_FRAME message to phone via Bluetooth
                         bluetoothClient.sendMessage(
@@ -1037,6 +1112,32 @@ class GlassesViewModel(
         videoStreamingJob?.cancel()
         videoStreamingJob = null
         Log.d(TAG, "Video streaming stopped")
+    }
+
+    private fun jpegDimensions(imageData: ByteArray): String? {
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeByteArray(imageData, 0, imageData.size, options)
+            if (options.outWidth > 0 && options.outHeight > 0) {
+                "${options.outWidth}x${options.outHeight}"
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read JPEG dimensions", e)
+            null
+        }
+    }
+
+    private fun saveLatestVisualTranslationSentFrame(frameData: ByteArray) {
+        try {
+            val debugDir = java.io.File(context.filesDir, "debug").apply { mkdirs() }
+            java.io.File(debugDir, "latest_visual_translation_sent.jpg").writeBytes(frameData)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save latest sent visual translation frame", e)
+        }
     }
     
     // ==================== Photo Capture ====================
@@ -1072,7 +1173,9 @@ class GlassesViewModel(
                 // Step 1: Capture photo
                 val cameraType = cameraManager?.getCameraTypeName() ?: "Unknown"
                 Log.d(TAG, "Capturing photo using: $cameraType")
-                val rawImageData = cameraManager?.capturePhoto()
+                val rawImageData = cameraCaptureMutex.withLock {
+                    cameraManager?.capturePhoto()
+                }
                 
                 if (rawImageData == null) {
                     val cameraState = cameraManager?.cameraState?.value

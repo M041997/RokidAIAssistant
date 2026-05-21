@@ -313,9 +313,11 @@ fun GlassesMainScreen(
                     // When connected, tap screen to toggle recording
                     viewModel.toggleRecording()
                 } else {
-                    // When disconnected, show device selector
-                    viewModel.refreshPairedDevices()
-                    showDeviceSelector = true
+                    // When disconnected, default to the paired Pixel 7 during active testing.
+                    if (!viewModel.connectToPreferredPhoneIfAvailable()) {
+                        viewModel.refreshPairedDevices()
+                        showDeviceSelector = true
+                    }
                 }
             }
     ) {

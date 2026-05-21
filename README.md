@@ -42,6 +42,14 @@ Notes:
 - The current experience is live translation text on the glasses, not yet a Google Translate-style spatial text replacement overlay.
 - Local Qwen test URL: `http://100.114.53.77:11440/v1` with model `qwen3` / `qwen3GGUF_moe`; Pixel must be connected to Tailscale.
 
+Spatial translation overlay status:
+
+- It should be possible to line translated text up with the source text location in the image or glasses overlay, but the current app does not support that path yet.
+- Current flow: glasses send camera frames to the phone, the phone asks the vision model for only the English translation, then sends plain `AI_RESPONSE_TEXT` back to the glasses.
+- Current glasses UI renders that text as one centered Compose text block, not as positioned text over the camera/glasses view.
+- To support spatial overlays, the vision/OCR step would need structured results such as source text, translated text, and bounding boxes. The phone would need to send those boxes to the glasses, and the glasses app would need to draw translated text at normalized overlay coordinates.
+- Coordinate mapping will need care because live visual translation frames are rotated, center-cropped, zoomed `2x`, resized, and compressed before the phone analyzes them.
+
 ---
 
 ## 🚀 Quick Start (5 minutes)

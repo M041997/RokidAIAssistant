@@ -94,3 +94,7 @@ credentials.json
 
 # Local SN auth binary (keep local, never commit)
 app/src/main/res/raw/sn_auth_file.lc
+
+# Local visual translation debug captures
+debug_frames/
+tmp/

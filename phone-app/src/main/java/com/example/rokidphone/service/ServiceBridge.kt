@@ -31,8 +31,23 @@ object ServiceBridge {
         val severity: PipelineSeverity = PipelineSeverity.IDLE
     )
 
+    data class VisualTranslationDebugInfo(
+        val receivedFramePath: String? = null,
+        val analyzedFramePath: String? = null,
+        val receivedFrameMeta: String = "",
+        val analyzedFrameMeta: String = "",
+        val providerLabel: String = "",
+        val sourceLanguage: String = "",
+        val rawResponse: String = "",
+        val skipReason: String = "",
+        val updatedAtMs: Long = 0L
+    )
+
     private val _pipelineStatusFlow = MutableStateFlow(PipelineStatus())
     val pipelineStatusFlow: StateFlow<PipelineStatus> = _pipelineStatusFlow.asStateFlow()
+
+    private val _visualTranslationDebugFlow = MutableStateFlow(VisualTranslationDebugInfo())
+    val visualTranslationDebugFlow: StateFlow<VisualTranslationDebugInfo> = _visualTranslationDebugFlow.asStateFlow()
     
     private val _conversationFlow = MutableSharedFlow<Message>(replay = 0)
     val conversationFlow: SharedFlow<Message> = _conversationFlow.asSharedFlow()
@@ -154,6 +169,11 @@ object ServiceBridge {
     fun updatePipelineStatus(status: PipelineStatus) {
         Log.d(TAG, "Pipeline status: ${status.title} - ${status.detail}")
         _pipelineStatusFlow.value = status
+    }
+
+    fun updateVisualTranslationDebug(info: VisualTranslationDebugInfo) {
+        Log.d(TAG, "Visual translation debug updated: $info")
+        _visualTranslationDebugFlow.value = info
     }
     
     /**

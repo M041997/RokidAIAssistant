@@ -246,6 +246,7 @@ fun PhoneMainScreen(
                     latestPhotoPath = uiState.latestPhotoPath,
                     processingStatus = uiState.processingStatus,
                     pipelineStatus = uiState.pipelineStatus,
+                    visualTranslationDebugInfo = uiState.visualTranslationDebugInfo,
                     currentModelId = settings.aiModelId,
                     visualTranslationSourceLanguage = settings.visualTranslationSourceLanguage,
                     isVisualTranslationActive = uiState.isVisualTranslationActive,

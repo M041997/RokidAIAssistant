@@ -42,6 +42,7 @@ data class PhoneUiState(
     val latestPhotoPath: String? = null,     // Path to the latest received photo
     val recordingState: RecordingState = RecordingState.Idle,  // Recording state
     val pipelineStatus: ServiceBridge.PipelineStatus = ServiceBridge.PipelineStatus(),
+    val visualTranslationDebugInfo: ServiceBridge.VisualTranslationDebugInfo = ServiceBridge.VisualTranslationDebugInfo(),
     val isVisualTranslationActive: Boolean = false,
     val isSystemBluetoothGlassesConnected: Boolean = false,
     val systemBluetoothGlassesName: String? = null
@@ -124,6 +125,12 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             ServiceBridge.pipelineStatusFlow.collect { status ->
                 _uiState.update { it.copy(pipelineStatus = status) }
+            }
+        }
+
+        viewModelScope.launch {
+            ServiceBridge.visualTranslationDebugFlow.collect { info ->
+                _uiState.update { it.copy(visualTranslationDebugInfo = info) }
             }
         }
 

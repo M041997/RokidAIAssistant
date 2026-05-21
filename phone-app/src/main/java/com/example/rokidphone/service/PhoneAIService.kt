@@ -944,7 +944,15 @@ class PhoneAIService : Service() {
         serviceScope.launch {
             try {
                 Log.d(TAG, "Analyzing visual translation frame: ${frameData.size} bytes")
-                saveLatestVisualTranslationFrame(frameData)
+                val receivedFramePath = saveLatestVisualTranslationFrame(frameData, "latest_received.jpg")
+                val receivedFrameMeta = visualTranslationFrameMeta(frameData)
+                ServiceBridge.updateVisualTranslationDebug(
+                    ServiceBridge.VisualTranslationDebugInfo(
+                        receivedFramePath = receivedFramePath,
+                        receivedFrameMeta = receivedFrameMeta,
+                        updatedAtMs = System.currentTimeMillis()
+                    )
+                )
 
                 val currentFrameHash = visualTranslationFrameHash(frameData)
                 if (currentFrameHash != null) {
@@ -1005,6 +1013,9 @@ class PhoneAIService : Service() {
                 } else {
                     frameData
                 }
+                val visualLanguage = settings.visualTranslationSourceLanguage
+                val analyzedFramePath = saveLatestVisualTranslationFrame(analysisFrameData, "latest_analyzed.jpg")
+                val analyzedFrameMeta = visualTranslationFrameMeta(analysisFrameData)
 
                 updatePipeline(
                     title = "Frame received",
@@ -1012,11 +1023,33 @@ class PhoneAIService : Service() {
                     progress = 0.45f,
                     severity = ServiceBridge.PipelineSeverity.WORKING
                 )
-                val visualLanguage = settings.visualTranslationSourceLanguage
+                ServiceBridge.updateVisualTranslationDebug(
+                    ServiceBridge.VisualTranslationDebugInfo(
+                        receivedFramePath = receivedFramePath,
+                        analyzedFramePath = analyzedFramePath,
+                        receivedFrameMeta = receivedFrameMeta,
+                        analyzedFrameMeta = analyzedFrameMeta,
+                        providerLabel = providerLabel,
+                        sourceLanguage = VisualTranslationLanguages.displayName(visualLanguage),
+                        updatedAtMs = System.currentTimeMillis()
+                    )
+                )
                 val result = aiService?.analyzeImage(analysisFrameData, buildVisualTranslationPrompt(visualLanguage))
                     ?: getString(R.string.ai_analysis_unavailable)
                 val cleanedResult = cleanMarkdown(result)
                 Log.d(TAG, "Visual translation result from $providerLabel: ${cleanedResult.take(160)}")
+                ServiceBridge.updateVisualTranslationDebug(
+                    ServiceBridge.VisualTranslationDebugInfo(
+                        receivedFramePath = receivedFramePath,
+                        analyzedFramePath = analyzedFramePath,
+                        receivedFrameMeta = receivedFrameMeta,
+                        analyzedFrameMeta = analyzedFrameMeta,
+                        providerLabel = providerLabel,
+                        sourceLanguage = VisualTranslationLanguages.displayName(visualLanguage),
+                        rawResponse = cleanedResult,
+                        updatedAtMs = System.currentTimeMillis()
+                    )
+                )
                 if (currentFrameHash != null) {
                     lastVisualTranslationAnalyzedFrameHash = currentFrameHash
                 }
@@ -1036,6 +1069,19 @@ class PhoneAIService : Service() {
                 }
 
                 if (isNoVisualTranslationResult(cleanedResult, visualLanguage)) {
+                    ServiceBridge.updateVisualTranslationDebug(
+                        ServiceBridge.VisualTranslationDebugInfo(
+                            receivedFramePath = receivedFramePath,
+                            analyzedFramePath = analyzedFramePath,
+                            receivedFrameMeta = receivedFrameMeta,
+                            analyzedFrameMeta = analyzedFrameMeta,
+                            providerLabel = providerLabel,
+                            sourceLanguage = VisualTranslationLanguages.displayName(visualLanguage),
+                            rawResponse = cleanedResult,
+                            skipReason = "No readable matching text",
+                            updatedAtMs = System.currentTimeMillis()
+                        )
+                    )
                     updatePipeline(
                         title = "Frame skipped",
                         detail = "No readable matching text in this frame; keeping the last translation",
@@ -1180,13 +1226,34 @@ class PhoneAIService : Service() {
             normalized.contains("text visible") && normalized.startsWith("no ")
     }
 
-    private fun saveLatestVisualTranslationFrame(frameData: ByteArray) {
-        try {
+    private fun saveLatestVisualTranslationFrame(frameData: ByteArray, fileName: String): String? {
+        return try {
             val frameDir = java.io.File(filesDir, "live_visual_frames").apply { mkdirs() }
-            java.io.File(frameDir, "latest.jpg").writeBytes(frameData)
+            java.io.File(frameDir, fileName).apply {
+                writeBytes(frameData)
+            }.absolutePath
         } catch (e: Exception) {
             Log.w(TAG, "Failed to save latest visual translation frame", e)
+            null
         }
+    }
+
+    private fun visualTranslationFrameMeta(frameData: ByteArray): String {
+        val dimensions = try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeByteArray(frameData, 0, frameData.size, options)
+            if (options.outWidth > 0 && options.outHeight > 0) {
+                "${options.outWidth}x${options.outHeight}"
+            } else {
+                "unknown"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read visual translation frame dimensions", e)
+            "unknown"
+        }
+        return "$dimensions, ${frameData.size / 1024} KB"
     }
 
     private fun buildVisualTranslationPrompt(sourceLanguageCode: String): String {

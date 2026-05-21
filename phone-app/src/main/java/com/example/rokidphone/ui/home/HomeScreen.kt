@@ -46,6 +46,7 @@ fun HomeScreen(
     latestPhotoPath: String?,
     processingStatus: String?,
     pipelineStatus: ServiceBridge.PipelineStatus,
+    visualTranslationDebugInfo: ServiceBridge.VisualTranslationDebugInfo,
     currentModelId: String,
     visualTranslationSourceLanguage: String,
     isVisualTranslationActive: Boolean,
@@ -152,6 +153,16 @@ fun HomeScreen(
 
         item {
             PipelineStatusBar(status = pipelineStatus)
+        }
+
+        item {
+            AnimatedSection(
+                visible = isVisualTranslationActive ||
+                    visualTranslationDebugInfo.receivedFramePath != null ||
+                    visualTranslationDebugInfo.analyzedFramePath != null
+            ) {
+                VisualTranslationDebugCard(info = visualTranslationDebugInfo)
+            }
         }
         
         // Camera capture card (only when connected)
@@ -347,6 +358,138 @@ private fun PipelineStatusBar(
                 modifier = Modifier.fillMaxWidth(),
                 color = contentColor,
                 trackColor = contentColor.copy(alpha = 0.2f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun VisualTranslationDebugCard(
+    info: ServiceBridge.VisualTranslationDebugInfo
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.BugReport,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Live translation debug",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            if (info.providerLabel.isNotBlank() || info.sourceLanguage.isNotBlank()) {
+                Text(
+                    text = listOf(info.providerLabel, info.sourceLanguage)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" / "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                DebugFramePreview(
+                    title = "Received",
+                    path = info.receivedFramePath,
+                    meta = info.receivedFrameMeta,
+                    modifier = Modifier.weight(1f)
+                )
+                DebugFramePreview(
+                    title = "Analyzed",
+                    path = info.analyzedFramePath,
+                    meta = info.analyzedFrameMeta,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            if (info.skipReason.isNotBlank()) {
+                Text(
+                    text = "Skipped: ${info.skipReason}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (info.rawResponse.isNotBlank()) {
+                Text(
+                    text = info.rawResponse,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 4
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebugFramePreview(
+    title: String,
+    path: String?,
+    meta: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium
+        )
+        val file = remember(path) { path?.let { File(it) } }
+        if (file?.exists() == true) {
+            Image(
+                painter = rememberAsyncImagePainter(file),
+                contentDescription = "$title visual translation frame",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(AppShapeTokens.ImageContainer),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(AppShapeTokens.ImageContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No frame",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (meta.isNotBlank()) {
+            Text(
+                text = meta,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
