@@ -23,14 +23,16 @@ Current working state:
 - Rokid APK uploader helper scripts can stage the main glasses app or the separate Bluetooth launcher app without manually browsing for APKs.
 - Phone app auto-connects to the Pixel 7 path used during testing.
 - Photo translation works best in light mode / readable screen conditions, with photo translation using crop/upscale and auto language detection.
+- Photo translation pagination/auto-advance feels good in testing.
 - Live visual translation works for Japanese and Spanish to English when the frame is readable.
+- Live visual translation now allows a new API call after the reading timer ends, even if the view is still stable/similar.
 - Local backup zip was created and copied to the Expansion drive.
 
 What we are testing next:
 
 1. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm blue light -> uploader finds glasses.
 2. Review photo translation under normal sitting distance and light-mode screen conditions.
-3. Confirm photo translation pagination/auto-advance feels natural on the glasses.
+3. Re-check that live translation makes another API call after the reading timer ends.
 4. Re-check live translation to English with Japanese and Spanish, since that path is currently good enough.
 5. Decide whether to keep tuning photo crop/upscale or move on to spatial text overlay research.
 
@@ -308,6 +310,8 @@ Current checkpoint:
 - [x] Separate glasses menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` installed
 - [x] Blue-light launcher turns on the glasses blue light and lets the Pixel uploader find the glasses
 - [x] Project zip backup copied to `/media/boss/Expansion/RokidAIAssistant_Backups/`
+- [x] Photo translation auto-page advance feels good
+- [x] Live translation reading timer no longer refreshes forever on the same stable view before rechecking
 - [ ] Validate live-frame orientation and readability under normal wearing conditions
 - [ ] Test auto-detect translation on Japanese, Spanish, German, and French across Gemini and Qwen
 - [ ] Decide whether to tune zoom/crop/rotation after seeing new captured frames

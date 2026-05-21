@@ -995,14 +995,12 @@ class PhoneAIService : Service() {
                         analyzedFrameHash != null &&
                         areVisualTranslationFramesSimilar(analyzedFrameHash, currentFrameHash)
                     ) {
-                        lastVisualTranslationSuccessMs = System.currentTimeMillis()
                         updatePipeline(
-                            title = "Translation held",
-                            detail = "Same view still visible; keeping the current translation",
-                            progress = 1f,
-                            severity = ServiceBridge.PipelineSeverity.SUCCESS
+                            title = "Rechecking view",
+                            detail = "Reading timer ended; sending the stable view again",
+                            progress = 0.4f,
+                            severity = ServiceBridge.PipelineSeverity.WORKING
                         )
-                        return@launch
                     }
                 }
 
