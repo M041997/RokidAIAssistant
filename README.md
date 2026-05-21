@@ -11,7 +11,7 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:12 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:23 CDT`
 
 Current working state:
 
@@ -24,6 +24,7 @@ Current working state:
 - Phone app auto-connects to the Pixel 7 path used during testing.
 - Photo translation works best in light mode / readable screen conditions.
 - Photo translation now keeps the whole wearer view on the glasses, then the phone rotates the frame, detects the bright readable screen/object region, crops/enhances/upscales it, and saves `latest_photo_translation_analyzed.jpg` for debugging.
+- Photo/live translation model inputs now include a full detected readable surface plus an enlarged center crop of the same surface so normal sitting-distance text has both context and a zoomed reading view.
 - Photo translation prompt now asks the model to identify the main readable surface first and translate partially readable text instead of falling back too quickly to `No translatable text visible`.
 - Photo translation pagination/auto-advance feels good in testing.
 - Live visual translation works for Japanese and Spanish to English when the frame is readable.

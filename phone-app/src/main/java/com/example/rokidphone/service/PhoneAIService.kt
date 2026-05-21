@@ -1201,13 +1201,13 @@ class PhoneAIService : Service() {
             } else {
                 bitmap
             }
-            val scaled = scaleForReadableTextSurface(cropped)
-            val enhanced = enhanceReadableTextSurface(scaled)
+            val analysisBitmap = buildReadableSurfaceAnalysisBitmap(cropped)
+            val enhanced = enhanceReadableTextSurface(analysisBitmap)
             ByteArrayOutputStream().use { output ->
                 enhanced.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, output)
                 if (bitmap != cropped) bitmap.recycle()
-                if (cropped != scaled) cropped.recycle()
-                if (scaled != enhanced) scaled.recycle()
+                if (cropped != analysisBitmap) cropped.recycle()
+                if (analysisBitmap != enhanced) analysisBitmap.recycle()
                 enhanced.recycle()
                 output.toByteArray()
             }
@@ -1374,6 +1374,54 @@ class PhoneAIService : Service() {
         return android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
     }
 
+    private fun buildReadableSurfaceAnalysisBitmap(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
+        val fullSurface = scaleForReadableTextSurface(bitmap)
+        val zoomSource = createReadableCenterCrop(bitmap)
+        val zoomSurface = scaleForReadableTextSurface(zoomSource)
+        val separatorHeight = 16
+        val targetWidth = maxOf(fullSurface.width, zoomSurface.width)
+        val result = android.graphics.Bitmap.createBitmap(
+            targetWidth,
+            fullSurface.height + separatorHeight + zoomSurface.height,
+            android.graphics.Bitmap.Config.ARGB_8888
+        )
+        val canvas = android.graphics.Canvas(result)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        canvas.drawBitmap(fullSurface, 0f, 0f, null)
+        val separatorPaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.rgb(32, 32, 32)
+        }
+        canvas.drawRect(
+            0f,
+            fullSurface.height.toFloat(),
+            targetWidth.toFloat(),
+            (fullSurface.height + separatorHeight).toFloat(),
+            separatorPaint
+        )
+        canvas.drawBitmap(zoomSurface, 0f, (fullSurface.height + separatorHeight).toFloat(), null)
+
+        if (fullSurface != bitmap) fullSurface.recycle()
+        if (zoomSource != bitmap) zoomSource.recycle()
+        if (zoomSurface != zoomSource) zoomSurface.recycle()
+        return result
+    }
+
+    private fun createReadableCenterCrop(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width < 480 || height < 360) return bitmap
+
+        val left = (width * 0.12f).toInt().coerceIn(0, width - 1)
+        val top = (height * 0.12f).toInt().coerceIn(0, height - 1)
+        val right = (width * 0.98f).toInt().coerceIn(left + 1, width)
+        val bottom = (height * 0.78f).toInt().coerceIn(top + 1, height)
+        val cropWidth = right - left
+        val cropHeight = bottom - top
+        if (cropWidth < width * 0.35f || cropHeight < height * 0.25f) return bitmap
+
+        return android.graphics.Bitmap.createBitmap(bitmap, left, top, cropWidth, cropHeight)
+    }
+
     private fun enhanceReadableTextSurface(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
         val result = android.graphics.Bitmap.createBitmap(bitmap.width, bitmap.height, android.graphics.Bitmap.Config.ARGB_8888)
         val contrast = 1.25f
@@ -1495,6 +1543,7 @@ class PhoneAIService : Service() {
 
         return "This is a live camera frame from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
             "Read $sourceText on that surface and translate it into natural English, even if the text is small, tilted, bright, or surrounded by dark background. " +
+            "The image may include both a full view and an enlarged crop of the same surface; use the clearest view and do not translate duplicate text twice. " +
             "Return only the English translation for the glasses display. " +
             "If there are multiple signs or lines, keep the same order and use short line breaks. " +
             "If some matching text is readable, translate the clear parts instead of saying there is no text. " +
@@ -1504,6 +1553,7 @@ class PhoneAIService : Service() {
     private fun buildPhotoTranslationPrompt(): String {
         return "This is a photo from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
             "Focus on the readable text inside that object even if it is small, tilted, bright, or surrounded by dark background. " +
+            "The image may include both a full view and an enlarged crop of the same surface; use the clearest view and do not translate duplicate text twice. " +
             "Read any visible non-English text, especially Japanese, Spanish, Chinese, Korean, German, or French, and translate it into natural English. " +
             "Return only the English translation for the glasses display. Preserve the order of lines with short line breaks. " +
             "If there is readable text but only part of it is clear, translate the clear parts and do not say there is no text. " +
