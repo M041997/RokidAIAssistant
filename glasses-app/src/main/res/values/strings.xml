@@ -20,6 +20,7 @@
     <string name="cancel">Cancel</string>
     <string name="recommended">Recommended</string>
     <string name="bluetooth_search">Bluetooth search</string>
+    <string name="bluetooth">Bluetooth</string>
     
     <!-- Display Messages -->
     <string name="not_connected">Not connected to phone\nPlease select device</string>

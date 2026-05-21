@@ -353,7 +353,7 @@ fun GlassesMainScreen(
             modifier = Modifier.align(Alignment.Center)
         )
 
-        if (!uiState.isConnected && !uiState.isProcessing) {
+        if (!uiState.isPaginated && !uiState.isProcessing) {
             TextButton(
                 onClick = { viewModel.startBluetoothSearchMode() },
                 modifier = Modifier
@@ -361,7 +361,7 @@ fun GlassesMainScreen(
                     .padding(bottom = 64.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.bluetooth_search),
+                    text = stringResource(R.string.bluetooth),
                     color = Color(0xFF64B5F6),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
