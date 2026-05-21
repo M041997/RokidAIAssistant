@@ -19,6 +19,7 @@
     <string name="unknown_device">Unknown Device</string>
     <string name="cancel">Cancel</string>
     <string name="recommended">Recommended</string>
+    <string name="bluetooth_search">Bluetooth search</string>
     
     <!-- Display Messages -->
     <string name="not_connected">Not connected to phone\nPlease select device</string>

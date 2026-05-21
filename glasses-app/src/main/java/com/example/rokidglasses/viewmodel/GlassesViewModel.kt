@@ -2,13 +2,16 @@ package com.example.rokidglasses.viewmodel
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModel
@@ -83,6 +86,8 @@ class GlassesViewModel(
         private const val MAX_CHARS_PER_PAGE = 120
         private const val MAX_LINES_PER_PAGE = 4
         private const val AUDIO_DIAGNOSTIC_INTERVAL_MS = 1000L
+        private const val PHOTO_TRANSLATION_AUTO_PAGE_MIN_MS = 2500L
+        private const val PHOTO_TRANSLATION_AUTO_PAGE_MS_PER_CHAR = 75L
         private const val VIDEO_FRAME_TARGET_WIDTH = 640
         private const val VIDEO_FRAME_TARGET_HEIGHT = 480
         private const val VIDEO_FRAME_QUALITY = 50
@@ -108,6 +113,7 @@ class GlassesViewModel(
     // Store full AI response for pagination
     private var fullAiResponse: String = ""
     private var responsePages: List<String> = emptyList()
+    private var autoPageAdvanceJob: Job? = null
     
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
@@ -278,6 +284,49 @@ class GlassesViewModel(
         val devices = bluetoothClient.getPairedDevices()
         _uiState.update { it.copy(availableDevices = devices) }
         Log.d(TAG, "Found ${devices.size} paired devices")
+    }
+
+    /**
+     * Ask Android to make the glasses discoverable for pairing/search.
+     *
+     * Rokid firmware controls the physical blue LED, so this may or may not
+     * match the hardware triple-tap behavior on every build.
+     */
+    fun startBluetoothSearchMode() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED
+            ) {
+                _uiState.update {
+                    it.copy(
+                        displayText = "Bluetooth search needs permission",
+                        hintText = "Grant Bluetooth permission and try again"
+                    )
+                }
+                return
+            }
+
+            val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            _uiState.update {
+                it.copy(
+                    displayText = "Bluetooth search mode",
+                    hintText = "Scan from Pixel 7 now"
+                )
+            }
+            Log.d(TAG, "Requested Bluetooth discoverable mode")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to request Bluetooth discoverable mode", e)
+            _uiState.update {
+                it.copy(
+                    displayText = "Bluetooth search unavailable",
+                    hintText = "Use the glasses pairing gesture"
+                )
+            }
+        }
     }
 
     /**
@@ -836,6 +885,8 @@ class GlassesViewModel(
                     totalPages = responsePages.size,
                     isPaginated = isPaginated
                 ) }
+
+                startPhotoTranslationAutoPageAdvance()
             }
             
             MessageType.REMOTE_RECORD_START -> {
@@ -975,6 +1026,7 @@ class GlassesViewModel(
      * Navigate to next page (swipe down)
      */
     fun nextPage() {
+        autoPageAdvanceJob?.cancel()
         val currentState = _uiState.value
         if (currentState.isPaginated && currentState.currentPage < currentState.totalPages - 1) {
             val newPage = currentState.currentPage + 1
@@ -992,6 +1044,7 @@ class GlassesViewModel(
      * Navigate to previous page (swipe up)
      */
     fun previousPage() {
+        autoPageAdvanceJob?.cancel()
         val currentState = _uiState.value
         if (currentState.isPaginated && currentState.currentPage > 0) {
             val newPage = currentState.currentPage - 1
@@ -1018,6 +1071,8 @@ class GlassesViewModel(
      * Reset pagination state (when starting new conversation)
      */
     private fun resetPagination() {
+        autoPageAdvanceJob?.cancel()
+        autoPageAdvanceJob = null
         fullAiResponse = ""
         responsePages = emptyList()
         _uiState.update { it.copy(
@@ -1027,8 +1082,45 @@ class GlassesViewModel(
         ) }
     }
 
+    private fun startPhotoTranslationAutoPageAdvance() {
+        autoPageAdvanceJob?.cancel()
+        if (responsePages.size <= 1) {
+            autoPageAdvanceJob = null
+            return
+        }
+
+        autoPageAdvanceJob = viewModelScope.launch {
+            for (pageIndex in 1 until responsePages.size) {
+                val previousPageText = responsePages.getOrElse(pageIndex - 1) { "" }
+                val delayMs = maxOf(
+                    PHOTO_TRANSLATION_AUTO_PAGE_MIN_MS,
+                    previousPageText.length * PHOTO_TRANSLATION_AUTO_PAGE_MS_PER_CHAR
+                )
+                delay(delayMs)
+
+                val currentState = _uiState.value
+                if (!currentState.isPaginated || currentState.currentPage != pageIndex - 1) {
+                    return@launch
+                }
+
+                val isLastPage = pageIndex == responsePages.size - 1
+                val pageIndicator = " (${pageIndex + 1}/${responsePages.size})"
+                _uiState.update { it.copy(
+                    currentPage = pageIndex,
+                    displayText = responsePages.getOrElse(pageIndex) { "" } + pageIndicator,
+                    hintText = if (isLastPage) {
+                        context.getString(R.string.tap_continue)
+                    } else {
+                        context.getString(R.string.swipe_for_more)
+                    }
+                ) }
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        autoPageAdvanceJob?.cancel()
         recordingJob?.cancel()
         videoStreamingJob?.cancel()
         audioRecord?.release()
