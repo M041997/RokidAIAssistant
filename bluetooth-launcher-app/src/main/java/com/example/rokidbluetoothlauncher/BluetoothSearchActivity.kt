@@ -6,29 +6,45 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.AudioAttributes
 import android.os.Build
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.Locale
 
 class BluetoothSearchActivity : Activity() {
     companion object {
         private const val TAG = "BluetoothSearchActivity"
         private const val DISCOVERABLE_SECONDS = 300
         private const val REQUEST_BLUETOOTH_PERMISSIONS = 42
+        private const val SEARCH_PROMPT_UTTERANCE_ID = "rokid_bluetooth_search_prompt"
     }
 
     private lateinit var statusText: TextView
     private lateinit var hintText: TextView
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private var searchPromptRequested = false
+    private var searchPromptSpoken = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        initSearchPromptTts()
         buildUi()
         ensurePermissionsThenStart()
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        super.onDestroy()
     }
 
     override fun onRequestPermissionsResult(
@@ -92,8 +108,57 @@ class BluetoothSearchActivity : Activity() {
         }
     }
 
+    private fun initSearchPromptTts() {
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                ttsReady = true
+                configureSearchPromptTts()
+                if (searchPromptRequested) {
+                    speakSearchPrompt()
+                }
+            } else {
+                Log.w(TAG, "Bluetooth search TTS unavailable: status=$status")
+            }
+        }
+    }
+
+    private fun configureSearchPromptTts() {
+        val engine = tts ?: return
+        val langResult = engine.setLanguage(Locale.SIMPLIFIED_CHINESE)
+        if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+            Log.w(TAG, "Simplified Chinese TTS unavailable; using default voice")
+        }
+        engine.setSpeechRate(1.0f)
+        engine.setPitch(1.0f)
+        engine.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .build()
+        )
+    }
+
+    private fun requestSearchPrompt() {
+        searchPromptRequested = true
+        speakSearchPrompt()
+    }
+
+    private fun speakSearchPrompt() {
+        val engine = tts
+        if (!ttsReady || engine == null || searchPromptSpoken) return
+
+        searchPromptSpoken = true
+        engine.speak(
+            getString(R.string.bluetooth_voice_prompt_zh),
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            SEARCH_PROMPT_UTTERANCE_ID
+        )
+    }
+
     private fun requestBluetoothDiscoverable() {
         try {
+            requestSearchPrompt()
             val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
                 putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, DISCOVERABLE_SECONDS)
             }

@@ -11,7 +11,7 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:42 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 11:07 CDT`
 
 Current working state:
 
@@ -19,7 +19,7 @@ Current working state:
 - Latest pushed remote checkpoint on `m041997/live-translation-frame-debug` includes photo and live translation readable-surface ROI/object crop fixes.
 - Rokid AI on the glasses is back to normal.
 - Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
-- Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Now searching for connection`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
+- Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, speaks the Chinese search cue, shows `Now searching for connection`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
 - Rokid APK uploader helper scripts can stage the main glasses app or the separate Bluetooth launcher app without manually browsing for APKs, and `scripts/rokid_apk_uploader.sh` defaults to the usual main glasses APK plus the saved serial.
 - Uploader helpers now stop the Rokid AI phone app before launching RokidApkUploader so the phone app cannot hold the glasses Bluetooth/CXR connection during APK upload.
 - Phone app auto-connects to the Pixel 7 path used during testing.
@@ -36,8 +36,8 @@ Current working state:
 
 What we are testing next:
 
-1. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm blue light -> uploader finds glasses.
-2. Upload the newly staged glasses APK from the Pixel uploader.
+1. Upload the newly staged Bluetooth launcher APK from the Pixel uploader.
+2. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm Chinese search cue, blue light, and uploader finds glasses.
 3. Re-check live/photo translation from normal sitting distance with light-mode screen text and confirm the dense text-cluster crop helps avoid `No translatable text visible`.
 4. Re-check that live translation makes another API call after the reading timer ends.
 5. Re-check live translation to English with Japanese and Spanish, since that path was already good before the ROI/object crop change.
