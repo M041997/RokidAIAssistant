@@ -356,33 +356,6 @@ fun GlassesMainScreen(
             totalPages = uiState.totalPages,
             modifier = Modifier.align(Alignment.Center)
         )
-
-        if (!uiState.isPaginated && !uiState.isProcessing) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 56.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                TextButton(onClick = { runRokidAiAction() }) {
-                    Text(
-                        text = stringResource(R.string.app_name),
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                TextButton(onClick = { viewModel.startBluetoothSearchMode() }) {
-                    Text(
-                        text = stringResource(R.string.glasses_blue_light_bluetooth),
-                        color = Color(0xFF64B5F6),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
         
         // Hint text (bottom)
         HintText(

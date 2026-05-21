@@ -68,6 +68,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".BluetoothSearchActivity"
+            android:exported="true"
+            android:label="@string/bluetooth_launcher_label"
+            android:screenOrientation="portrait"
+            android:keepScreenOn="true"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.RokidGlasses">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
         
         <!-- 語音喚醒背景服務 -->
         <service
