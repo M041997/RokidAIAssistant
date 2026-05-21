@@ -419,7 +419,8 @@ A: /sdcard/Download is Android's legacy name for shared internal storage.
 A: Run scripts/update_glasses_apk.sh.
    It builds the glasses debug APK, pushes it to:
    /sdcard/Download/glasses-app-debug.apk
-   Then it launches RokidApkUploader on the connected Pixel.
+   Then it launches RokidApkUploader, selects the APK, and fills
+   the serial number from debug_frames/rokid_serial.txt.
 ```
 
 ### Release Issues
