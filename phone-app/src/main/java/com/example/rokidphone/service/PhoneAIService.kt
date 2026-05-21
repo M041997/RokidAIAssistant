@@ -822,9 +822,7 @@ class PhoneAIService : Service() {
             nextPhotoAnalysisMode = PhotoAnalysisMode.DESCRIPTION
             val prompt = when (analysisMode) {
                 PhotoAnalysisMode.DESCRIPTION -> getString(R.string.image_analysis_prompt)
-                PhotoAnalysisMode.VISUAL_TRANSLATION -> buildVisualTranslationPrompt(
-                    VisualTranslationLanguages.AUTO
-                )
+                PhotoAnalysisMode.VISUAL_TRANSLATION -> buildPhotoTranslationPrompt()
             }
             val analysisPhotoBytes = when (analysisMode) {
                 PhotoAnalysisMode.DESCRIPTION -> photoBytes
@@ -1166,13 +1164,131 @@ class PhoneAIService : Service() {
 
     private fun preparePhotoTranslationImage(photoData: ByteArray): ByteArray {
         val rotated = rotateJpegFrame(photoData, -90)
-        saveLatestVisualTranslationFrame(rotated, "latest_photo_translation_analyzed.jpg")
+        val analyzed = extractAndEnhancePhotoTranslationRoi(rotated)
+        saveLatestVisualTranslationFrame(analyzed, "latest_photo_translation_analyzed.jpg")
         Log.d(
             TAG,
             "Photo translation model input prepared: raw=${visualTranslationFrameMeta(photoData)} " +
-                "analyzed=${visualTranslationFrameMeta(rotated)}"
+                "rotated=${visualTranslationFrameMeta(rotated)} " +
+                "analyzed=${visualTranslationFrameMeta(analyzed)}"
         )
-        return rotated
+        return analyzed
+    }
+
+    private fun extractAndEnhancePhotoTranslationRoi(photoData: ByteArray): ByteArray {
+        return try {
+            val bitmap = BitmapFactory.decodeByteArray(photoData, 0, photoData.size) ?: return photoData
+            val screenBox = detectBrightScreenRegion(bitmap)
+            val cropped = if (screenBox != null) {
+                android.graphics.Bitmap.createBitmap(
+                    bitmap,
+                    screenBox.left,
+                    screenBox.top,
+                    screenBox.width(),
+                    screenBox.height()
+                )
+            } else {
+                bitmap
+            }
+            val scaled = scaleForPhotoTranslation(cropped)
+            val enhanced = enhancePhotoTranslationBitmap(scaled)
+            ByteArrayOutputStream().use { output ->
+                enhanced.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, output)
+                if (bitmap != cropped) bitmap.recycle()
+                if (cropped != scaled) cropped.recycle()
+                if (scaled != enhanced) scaled.recycle()
+                enhanced.recycle()
+                output.toByteArray()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to prepare photo translation ROI", e)
+            photoData
+        }
+    }
+
+    private fun detectBrightScreenRegion(bitmap: android.graphics.Bitmap): android.graphics.Rect? {
+        val width = bitmap.width
+        val height = bitmap.height
+        val step = (minOf(width, height) / 220).coerceAtLeast(2)
+        var minX = width
+        var minY = height
+        var maxX = -1
+        var maxY = -1
+        var brightSamples = 0
+
+        var y = 0
+        while (y < height) {
+            var x = 0
+            while (x < width) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = android.graphics.Color.red(pixel)
+                val green = android.graphics.Color.green(pixel)
+                val blue = android.graphics.Color.blue(pixel)
+                val luminance = (red * 0.299f + green * 0.587f + blue * 0.114f)
+                val channelSpread = maxOf(red, green, blue) - minOf(red, green, blue)
+                if (luminance > 145f && channelSpread < 80) {
+                    brightSamples++
+                    minX = minOf(minX, x)
+                    minY = minOf(minY, y)
+                    maxX = maxOf(maxX, x)
+                    maxY = maxOf(maxY, y)
+                }
+                x += step
+            }
+            y += step
+        }
+
+        if (brightSamples < 80 || maxX <= minX || maxY <= minY) {
+            Log.d(TAG, "Photo translation ROI: no bright screen region detected")
+            return null
+        }
+
+        val boxWidth = maxX - minX
+        val boxHeight = maxY - minY
+        val boxArea = boxWidth * boxHeight
+        val imageArea = width * height
+        if (boxArea < imageArea * 0.08f) {
+            Log.d(TAG, "Photo translation ROI too small: ${boxWidth}x${boxHeight}")
+            return null
+        }
+
+        val padX = (boxWidth * 0.06f).toInt() + 20
+        val padY = (boxHeight * 0.06f).toInt() + 20
+        val rect = android.graphics.Rect(
+            (minX - padX).coerceAtLeast(0),
+            (minY - padY).coerceAtLeast(0),
+            (maxX + padX).coerceAtMost(width),
+            (maxY + padY).coerceAtMost(height)
+        )
+        Log.d(TAG, "Photo translation ROI: ${width}x${height} -> ${rect.width()}x${rect.height()}")
+        return rect
+    }
+
+    private fun scaleForPhotoTranslation(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
+        val targetWidth = 1600
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width == targetWidth) return bitmap
+        val scale = targetWidth.toFloat() / width.toFloat()
+        val targetHeight = (height * scale).toInt().coerceAtLeast(1)
+        return android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+    }
+
+    private fun enhancePhotoTranslationBitmap(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
+        val result = android.graphics.Bitmap.createBitmap(bitmap.width, bitmap.height, android.graphics.Bitmap.Config.ARGB_8888)
+        val contrast = 1.25f
+        val translate = (-0.5f * contrast + 0.5f) * 255f
+        val colorMatrix = android.graphics.ColorMatrix(floatArrayOf(
+            contrast, 0f, 0f, 0f, translate,
+            0f, contrast, 0f, 0f, translate,
+            0f, 0f, contrast, 0f, translate,
+            0f, 0f, 0f, 1f, 0f
+        ))
+        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply {
+            colorFilter = android.graphics.ColorMatrixColorFilter(colorMatrix)
+        }
+        android.graphics.Canvas(result).drawBitmap(bitmap, 0f, 0f, paint)
+        return result
     }
 
     private fun visualTranslationFrameHash(frameData: ByteArray): Long? {
@@ -1281,6 +1397,15 @@ class PhoneAIService : Service() {
             "Return only the English translation for the glasses display. " +
             "If there are multiple signs or lines, keep the same order and use short line breaks. " +
             "If no matching text is visible, say: $noTextMessage"
+    }
+
+    private fun buildPhotoTranslationPrompt(): String {
+        return "This is a photo from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
+            "Focus on the readable text inside that object even if it is small, tilted, bright, or surrounded by dark background. " +
+            "Read any visible non-English text, especially Japanese, Spanish, Chinese, Korean, German, or French, and translate it into natural English. " +
+            "Return only the English translation for the glasses display. Preserve the order of lines with short line breaks. " +
+            "If there is readable text but only part of it is clear, translate the clear parts and do not say there is no text. " +
+            "Only if there is truly no readable text anywhere in the photo, say: No translatable text visible."
     }
     
     /**

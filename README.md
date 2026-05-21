@@ -11,18 +11,20 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 08:53 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 09:08 CDT`
 
 Current working state:
 
 - Current branch: `live-translation-frame-debug`.
-- Latest pushed remote checkpoint: `40cb0de Split Bluetooth blue light into separate launcher app`.
+- Latest pushed remote checkpoint before the current photo-mode patch: `ead4b74 Route TTS playback to glasses`.
 - Rokid AI on the glasses is back to normal.
 - Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
 - Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, shows `Finding glasses...`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
 - Rokid APK uploader helper scripts can stage the main glasses app or the separate Bluetooth launcher app without manually browsing for APKs.
 - Phone app auto-connects to the Pixel 7 path used during testing.
-- Photo translation works best in light mode / readable screen conditions, with photo translation using crop/upscale and auto language detection.
+- Photo translation works best in light mode / readable screen conditions.
+- Photo translation now keeps the whole wearer view on the glasses, then the phone rotates the frame, detects the bright readable screen/object region, crops/enhances/upscales it, and saves `latest_photo_translation_analyzed.jpg` for debugging.
+- Photo translation prompt now asks the model to identify the main readable surface first and translate partially readable text instead of falling back too quickly to `No translatable text visible`.
 - Photo translation pagination/auto-advance feels good in testing.
 - Live visual translation works for Japanese and Spanish to English when the frame is readable.
 - Live visual translation now allows a new API call after the reading timer ends, even if the view is still stable/similar.
@@ -32,7 +34,7 @@ Current working state:
 What we are testing next:
 
 1. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm blue light -> uploader finds glasses.
-2. Review photo translation under normal sitting distance and light-mode screen conditions.
+2. Upload the newly staged glasses APK from the Pixel uploader, then review photo translation under normal sitting distance and light-mode screen conditions.
 3. Re-check that live translation makes another API call after the reading timer ends.
 4. Re-check live translation to English with Japanese and Spanish, since that path is currently good enough.
 5. Decide whether to keep tuning photo crop/upscale or move on to spatial text overlay research.

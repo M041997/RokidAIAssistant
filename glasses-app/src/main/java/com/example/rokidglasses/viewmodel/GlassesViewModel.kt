@@ -163,8 +163,8 @@ class GlassesViewModel(
     // Live translation should match the user's central field of view, not the full wide camera frame.
     private val visualTranslationFrameZoom = 2.0f
 
-    // Photo translation uses a modest center crop, then upscales back to 720p for better text readability.
-    private val photoTranslationZoom = 1.5f
+    // Photo translation keeps the whole wearer view; the phone detects and crops the screen/text ROI.
+    private val photoTranslationZoom = 1.0f
 
     // Rokid camera frames arrive in sensor orientation, which is sideways relative to the wearer view.
     private val visualTranslationFrameRotationDegrees = 180
