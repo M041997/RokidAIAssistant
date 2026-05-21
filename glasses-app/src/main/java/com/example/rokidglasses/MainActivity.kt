@@ -276,6 +276,17 @@ fun GlassesMainScreen(
     // Track swipe gesture for pagination
     var swipeOffset by remember { mutableFloatStateOf(0f) }
     val swipeThreshold = 50f
+
+    val runRokidAiAction = {
+        if (uiState.isConnected) {
+            viewModel.toggleRecording()
+        } else {
+            if (!viewModel.connectToPreferredPhoneIfAvailable()) {
+                viewModel.refreshPairedDevices()
+                showDeviceSelector = true
+            }
+        }
+    }
     
     Box(
         modifier = Modifier
@@ -310,15 +321,8 @@ fun GlassesMainScreen(
                         // On last page, tap to dismiss and allow new recording
                         viewModel.dismissPagination()
                     }
-                } else if (uiState.isConnected) {
-                    // When connected, tap screen to toggle recording
-                    viewModel.toggleRecording()
                 } else {
-                    // When disconnected, default to the paired Pixel 7 during active testing.
-                    if (!viewModel.connectToPreferredPhoneIfAvailable()) {
-                        viewModel.refreshPairedDevices()
-                        showDeviceSelector = true
-                    }
+                    runRokidAiAction()
                 }
             }
     ) {
@@ -354,18 +358,29 @@ fun GlassesMainScreen(
         )
 
         if (!uiState.isPaginated && !uiState.isProcessing) {
-            TextButton(
-                onClick = { viewModel.startBluetoothSearchMode() },
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 64.dp)
+                    .padding(bottom = 56.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.bluetooth),
-                    color = Color(0xFF64B5F6),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                TextButton(onClick = { runRokidAiAction() }) {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                TextButton(onClick = { viewModel.startBluetoothSearchMode() }) {
+                    Text(
+                        text = stringResource(R.string.glasses_blue_light_bluetooth),
+                        color = Color(0xFF64B5F6),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
         

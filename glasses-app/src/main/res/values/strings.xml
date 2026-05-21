@@ -21,6 +21,7 @@
     <string name="recommended">Recommended</string>
     <string name="bluetooth_search">Bluetooth search</string>
     <string name="bluetooth">Bluetooth</string>
+    <string name="glasses_blue_light_bluetooth">Glasses blue light bluetooth</string>
     
     <!-- Display Messages -->
     <string name="not_connected">Not connected to phone\nPlease select device</string>
