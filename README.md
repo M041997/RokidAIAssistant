@@ -413,6 +413,15 @@ A: /sdcard/Download is Android's legacy name for shared internal storage.
    Use the Pixel's normal Downloads folder.
 ```
 
+**Q: How do I update the glasses APK without hunting for the file every time?**
+
+```
+A: Run scripts/update_glasses_apk.sh.
+   It builds the glasses debug APK, pushes it to:
+   /sdcard/Download/glasses-app-debug.apk
+   Then it launches RokidApkUploader on the connected Pixel.
+```
+
 ### Release Issues
 
 **Q: Release build fails with signing error**
