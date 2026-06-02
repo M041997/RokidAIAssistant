@@ -73,8 +73,8 @@ class GlassesCameraManager(private val context: Context) {
         private const val TAG = "GlassesCameraManager"
         
         // Capture settings
-        private const val TARGET_WIDTH = 1280
-        private const val TARGET_HEIGHT = 720
+        private const val TARGET_WIDTH = 1920
+        private const val TARGET_HEIGHT = 1080
         private const val JPEG_QUALITY = 85
         
         // Timeouts
@@ -613,23 +613,18 @@ class GlassesCameraManager(private val context: Context) {
         
         // Use YUV_420_888 sizes instead of JPEG
         val outputSizes = map?.getOutputSizes(ImageFormat.YUV_420_888) ?: return Size(TARGET_WIDTH, TARGET_HEIGHT)
-        
-        // Find size closest to target
+
+        Log.d(TAG, "Available capture sizes: ${outputSizes.joinToString { "${it.width}x${it.height}" }}")
+
+        // Prefer the largest size at-or-below the target pixel budget; otherwise the largest
+        // size we can get. Higher resolution gives the phone-side translator more glyph
+        // detail to OCR (Japanese/Chinese kanji especially need >=12px per char).
         val targetPixels = TARGET_WIDTH * TARGET_HEIGHT
-        
-        var bestSize = outputSizes[0]
-        var bestDiff = Int.MAX_VALUE
-        
-        for (size in outputSizes) {
-            val pixels = size.width * size.height
-            val diff = kotlin.math.abs(pixels - targetPixels)
-            
-            if (diff < bestDiff) {
-                bestDiff = diff
-                bestSize = size
-            }
-        }
-        
+        val atOrBelowTarget = outputSizes.filter { it.width * it.height <= targetPixels }
+        val bestSize = atOrBelowTarget.maxByOrNull { it.width * it.height }
+            ?: outputSizes.maxByOrNull { it.width * it.height }
+            ?: outputSizes[0]
+
         Log.d(TAG, "Selected capture size: ${bestSize.width}x${bestSize.height}")
         return bestSize
     }

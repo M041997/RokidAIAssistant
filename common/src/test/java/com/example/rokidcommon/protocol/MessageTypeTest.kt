@@ -70,6 +70,8 @@ class MessageTypeTest {
         assertThat(MessageType.LIVE_SESSION_END.code).isEqualTo(0x51)
         assertThat(MessageType.LIVE_TRANSCRIPTION.code).isEqualTo(0x52)
         assertThat(MessageType.VIDEO_FRAME.code).isEqualTo(0x53)
+        assertThat(MessageType.VISUAL_TRANSLATION_START.code).isEqualTo(0x54)
+        assertThat(MessageType.VISUAL_TRANSLATION_END.code).isEqualTo(0x55)
     }
 
     @Test
@@ -99,8 +101,8 @@ class MessageTypeTest {
     @Test
     fun `total enum count matches expected`() {
         // Test: total number of MessageType entries
-        // Connection(5) + Voice(6) + AI(5) + Display(3) + Photo(8) + Live(4) + System(3) = 34
-        assertThat(MessageType.entries.size).isEqualTo(34)
+        // Connection(5) + Voice(6) + AI(5) + Display(3) + Photo(8) + Live(6) + System(3) = 36
+        assertThat(MessageType.entries.size).isEqualTo(36)
     }
 
     // ==================== fromCode() ====================

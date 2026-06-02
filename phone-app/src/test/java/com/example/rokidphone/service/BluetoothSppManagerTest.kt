@@ -20,6 +20,7 @@ import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE)
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class BluetoothSppManagerTest {
 
     private lateinit var context: android.content.Context

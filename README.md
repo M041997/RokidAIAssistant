@@ -11,12 +11,25 @@
 
 ## Current Project Checkpoint
 
-Last verified checkpoint: `live-translation-frame-debug` at `2026-05-21 11:07 CDT`
+Last verified checkpoint: `live-translation-frame-debug` at `2026-06-01 21:53 CDT`
 
 Current working state:
 
 - Current branch: `live-translation-frame-debug`.
-- Latest pushed remote checkpoint on `m041997/live-translation-frame-debug` includes photo and live translation readable-surface ROI/object crop fixes.
+- Latest pushed remote checkpoint on `m041997/live-translation-frame-debug` includes ADB direct-install workflow, local Qwen routing, connection-test timeout fixes, and Bluetooth/photo-transfer stabilisation work.
+- Pixel 7 and Rokid glasses are both ADB-authorized:
+  - Pixel 7 serial: `2B231FDH2009ZV`
+  - Rokid glasses serial: `1901092542001726`
+- Rokid APK uploader is no longer required while ADB is available. Install directly:
+  - Phone: `adb -s 2B231FDH2009ZV install -r phone-app/build/outputs/apk/debug/phone-app-debug.apk`
+  - Glasses: `adb -s 1901092542001726 install -r glasses-app/build/outputs/apk/debug/glasses-app-debug.apk`
+- Local Qwen/OpenWebUI are reached from the Pixel through ADB reverse while USB is connected:
+  - `adb -s 2B231FDH2009ZV reverse tcp:11440 tcp:11440`
+  - `adb -s 2B231FDH2009ZV reverse tcp:8080 tcp:8080`
+  - Pixel app Custom provider URL: `http://127.0.0.1:11440/v1`
+  - Model: `qwen3`
+- Custom provider "Test connection" now has a 5 second UI timeout and becomes pressable again if the endpoint does not respond quickly.
+- OpenAI-compatible connection tests use a shorter test-only network timeout so a bad local route no longer feels like a frozen settings screen.
 - Rokid AI on the glasses is back to normal.
 - Separate glasses-menu app `ROKID BLUETOOTH BLUE LIGHT ENABLED` is installed and confirmed working.
 - Selecting `ROKID BLUETOOTH BLUE LIGHT ENABLED` opens Android discoverable mode, speaks the Chinese search cue, shows `Now searching for connection`, turns on the glasses blue light after allowing the prompt, and lets the Pixel/RokidApkUploader find the glasses.
@@ -32,25 +45,37 @@ Current working state:
 - Live visual translation now allows a new API call after the reading timer ends, even if the view is still stable/similar.
 - Live visual translation now keeps the whole wearer view on the glasses, then the phone finds the largest connected bright readable surface, crops/enhances/upscales it, and prompts the model to identify the screen/sign/page before translating.
 - Edge TTS audio is routed to the glasses over Bluetooth and played by the glasses app instead of playing through the Pixel speaker.
+- System TTS fallback now synthesizes to a temp WAV and forwards the generated audio bytes to the glasses instead of only speaking locally on the Pixel.
+- Gemini 3.x placeholder model IDs are migrated back to currently callable Gemini 2.5 IDs.
+- Recent SPP/photo-transfer fixes:
+  - Prevent duplicate glasses-side SPP connection attempts.
+  - Skip live-frame capture while SPP is disconnected instead of repeatedly capturing frames that cannot be sent.
+  - Lower live visual translation and photo translation payload budgets to protect Bluetooth SPP throughput.
+  - Align phone-side photo receiver timeout with the shared 60s transfer protocol budget.
+- Clean post-install state verified after the latest build:
+  - SPP connected: Pixel sees `Glasses_1726`, glasses see `Pixel 7`.
+  - Heartbeats are working.
+  - CXR connected briefly and then disconnected; SPP remained alive.
 - Local backup zip was created and copied to the Expansion drive.
 
 What we are testing next:
 
-1. Upload the newly staged Bluetooth launcher APK from the Pixel uploader.
-2. Re-run the blue-light launcher flow once from a cold start: glasses menu -> `ROKID BLUETOOTH BLUE LIGHT ENABLED` -> allow prompt -> confirm Chinese search cue, blue light, and uploader finds glasses.
-3. Re-check live/photo translation from normal sitting distance with light-mode screen text and confirm the dense text-cluster crop helps avoid `No translatable text visible`.
-4. Re-check that live translation makes another API call after the reading timer ends.
-5. Re-check live translation to English with Japanese and Spanish, since that path was already good before the ROI/object crop change.
-6. Decide whether to keep tuning photo/live crop/upscale or move on to spatial text overlay research.
+1. Re-test photo/local transfer after the latest SPP and payload-budget fixes.
+2. If transfer still stalls, pull clean filtered logs from both devices and inspect exact chunk/progress point:
+   - Pixel tags: `PhoneAIService BluetoothSppManager BluetoothPhotoReceiver OpenAiCompatibleService`
+   - Glasses tags: `GlassesViewModel BluetoothSppClient PhotoTransferProtocol ImageCompressor`
+3. Re-check live/photo translation from normal sitting distance with light-mode screen text.
+4. Confirm local Qwen analysis via `http://127.0.0.1:11440/v1` through ADB reverse.
+5. Re-check live translation retry cadence and that frame capture stops while SPP is disconnected.
+6. After transfer stability is good, decide whether to keep tuning OCR payload/crop quality or move on to spatial text overlay research.
 
 Notes:
 
-- The phone APK is already installed for the current checkpoint.
-- The glasses Rokid AI APK is installed and back to normal.
+- The phone APK and glasses APK are both installed for the current checkpoint via direct ADB.
 - The separate Bluetooth launcher APK is installed as its own glasses menu option.
 - `/sdcard/Download/...` means the Pixel's internal Downloads folder, not a physical SD card.
 - The current experience is live translation text on the glasses, not yet a Google Translate-style spatial text replacement overlay.
-- Local Qwen test URL: `http://100.114.53.77:11440/v1` with model `qwen3` / `qwen3GGUF_moe`; Pixel must be connected to Tailscale.
+- Local Qwen test URL while USB debugging is connected: `http://127.0.0.1:11440/v1` with model `qwen3`, using ADB reverse. The older Tailscale URL `http://100.114.53.77:11440/v1` timed out from the Pixel during testing.
 - Backup zip on Expansion:
   `/media/boss/Expansion/RokidAIAssistant_Backups/RokidAIAssistant_backup_20260521-085059_live-translation-frame-debug.zip`
 - Backup SHA-256:

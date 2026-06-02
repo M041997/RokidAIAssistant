@@ -39,7 +39,7 @@ sealed class ProviderSetting {
         override val displayName: String = "Google Gemini",
         override val enabled: Boolean = true,
         val apiKey: String = "",
-        val modelId: String = "gemini-3.1-flash",
+        val modelId: String = "gemini-2.5-flash",
         val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta/"
     ) : ProviderSetting() {
         @Transient

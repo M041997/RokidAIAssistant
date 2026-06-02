@@ -34,9 +34,11 @@ import com.example.rokidphone.service.ai.AiServiceFactory
 import com.example.rokidphone.service.stt.SttProvider
 import com.example.rokidphone.service.stt.SttServiceFactory
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val URL_SCHEME_HTTP = "http://"
 private const val URL_SCHEME_HTTPS = "https://"
+private const val CONNECTION_TEST_UI_TIMEOUT_MS = 5_000L
 
 private fun isHttpUrl(url: String): Boolean =
     url.startsWith(URL_SCHEME_HTTP) || url.startsWith(URL_SCHEME_HTTPS)
@@ -1383,6 +1385,7 @@ fun CustomProviderSection(
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
     var testSuccess by remember { mutableStateOf<Boolean?>(null) }
+    var testRequestId by remember { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
     
     Card(
@@ -1466,25 +1469,39 @@ fun CustomProviderSection(
             // Test Connection button
             Button(
                 onClick = {
+                    val requestId = ++testRequestId
                     isTesting = true
                     testResult = null
                     testSuccess = null
                     coroutineScope.launch {
                         try {
-                            val service = com.example.rokidphone.service.ai.OpenAiCompatibleService(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl,
-                                modelId = modelName.ifBlank { "llama4" },
-                                providerType = AiProvider.CUSTOM
-                            )
-                            val result = service.testConnection()
-                            testSuccess = result.isSuccess
-                            testResult = result.getOrElse { it.message ?: "Unknown error" }
+                            val result = withTimeoutOrNull(CONNECTION_TEST_UI_TIMEOUT_MS) {
+                                val service = com.example.rokidphone.service.ai.OpenAiCompatibleService(
+                                    apiKey = apiKey,
+                                    baseUrl = baseUrl,
+                                    modelId = modelName.ifBlank { "llama4" },
+                                    providerType = AiProvider.CUSTOM
+                                )
+                                service.testConnection()
+                            }
+                            if (requestId == testRequestId) {
+                                if (result == null) {
+                                    testSuccess = false
+                                    testResult = "Connection test timed out after 5 seconds"
+                                } else {
+                                    testSuccess = result.isSuccess
+                                    testResult = result.getOrElse { it.message ?: "Unknown error" }
+                                }
+                            }
                         } catch (e: Exception) {
-                            testSuccess = false
-                            testResult = e.message ?: "Connection failed"
+                            if (requestId == testRequestId) {
+                                testSuccess = false
+                                testResult = e.message ?: "Connection failed"
+                            }
                         } finally {
-                            isTesting = false
+                            if (requestId == testRequestId) {
+                                isTesting = false
+                            }
                         }
                     }
                 },

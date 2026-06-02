@@ -820,20 +820,16 @@ class PhoneAIService : Service() {
 
             val analysisMode = nextPhotoAnalysisMode
             nextPhotoAnalysisMode = PhotoAnalysisMode.DESCRIPTION
-            val prompt = when (analysisMode) {
-                PhotoAnalysisMode.DESCRIPTION -> getString(R.string.image_analysis_prompt)
-                PhotoAnalysisMode.VISUAL_TRANSLATION -> buildPhotoTranslationPrompt()
+
+            val analysisResult = when (analysisMode) {
+                PhotoAnalysisMode.DESCRIPTION -> {
+                    aiService?.analyzeImage(photoBytes, getString(R.string.image_analysis_prompt))
+                        ?: getString(R.string.ai_analysis_unavailable)
+                }
+                PhotoAnalysisMode.VISUAL_TRANSLATION -> {
+                    analyzePhotoForTranslationMultiPass(photoBytes)
+                }
             }
-            val analysisPhotoBytes = when (analysisMode) {
-                PhotoAnalysisMode.DESCRIPTION -> photoBytes
-                PhotoAnalysisMode.VISUAL_TRANSLATION -> preparePhotoTranslationImage(photoBytes)
-            }
-            
-            // Use AI service to analyze the image with the selected prompt
-            val analysisResult = aiService?.analyzeImage(
-                analysisPhotoBytes,
-                prompt
-            ) ?: getString(R.string.ai_analysis_unavailable)
             
             // Clean markdown for glasses display
             val cleanedResult = cleanMarkdown(analysisResult)
@@ -946,7 +942,7 @@ class PhoneAIService : Service() {
         serviceScope.launch {
             try {
                 Log.d(TAG, "Analyzing visual translation frame: ${frameData.size} bytes")
-                val receivedFramePath = saveLatestVisualTranslationFrame(frameData, "latest_received.jpg")
+                val receivedFramePath = saveVisualTranslationDebugFrame(frameData, "latest_received.jpg", "received")
                 val receivedFrameMeta = visualTranslationFrameMeta(frameData)
                 ServiceBridge.updateVisualTranslationDebug(
                     ServiceBridge.VisualTranslationDebugInfo(
@@ -1015,7 +1011,7 @@ class PhoneAIService : Service() {
                 }
                 val analysisFrameData = prepareVisualTranslationImage(orientedFrameData)
                 val visualLanguage = settings.visualTranslationSourceLanguage
-                val analyzedFramePath = saveLatestVisualTranslationFrame(analysisFrameData, "latest_analyzed.jpg")
+                val analyzedFramePath = saveVisualTranslationDebugFrame(analysisFrameData, "latest_analyzed.jpg", "analyzed")
                 val analyzedFrameMeta = visualTranslationFrameMeta(analysisFrameData)
 
                 updatePipeline(
@@ -1163,17 +1159,97 @@ class PhoneAIService : Service() {
         }
     }
 
-    private fun preparePhotoTranslationImage(photoData: ByteArray): ByteArray {
+    /**
+     * Multi-pass photo translation:
+     *   1. Full rotated frame as-is.
+     *   2. Same frame upscaled 1.5x (more pixels per glyph, helps fine text).
+     *   3. 60% center zoom, upscaled to 1280 wide (~1.67x zoom on the middle of the view).
+     *   4. 35% center zoom, upscaled to 1280 wide (~2.86x zoom, last-ditch detail pass).
+     * Short-circuits on the first pass whose response is *not* a "no translatable text"
+     * boilerplate. If every pass comes back empty, returns the last "no text" string.
+     */
+    private suspend fun analyzePhotoForTranslationMultiPass(photoData: ByteArray): String {
         val rotated = rotateJpegFrame(photoData, -90)
-        val analyzed = extractAndEnhanceReadableSurfaceRoi(rotated, "Photo translation")
-        saveLatestVisualTranslationFrame(analyzed, "latest_photo_translation_analyzed.jpg")
-        Log.d(
-            TAG,
-            "Photo translation model input prepared: raw=${visualTranslationFrameMeta(photoData)} " +
-                "rotated=${visualTranslationFrameMeta(rotated)} " +
-                "analyzed=${visualTranslationFrameMeta(analyzed)}"
+        val passes: List<Pair<String, () -> ByteArray>> = listOf(
+            "pass1_full" to { rotated },
+            "pass2_upscale" to { upscaleJpeg(rotated, 1.5f) },
+            "pass3_zoom60" to { centerZoomAndUpscale(rotated, 0.60f, 1280) },
+            "pass4_zoom35" to { centerZoomAndUpscale(rotated, 0.35f, 1280) }
         )
-        return analyzed
+
+        val prompt = buildPhotoTranslationPrompt()
+        val service = aiService ?: return getString(R.string.ai_analysis_unavailable)
+
+        var lastResult: String = "No translatable text visible."
+        for ((tag, transform) in passes) {
+            val bytes = transform()
+            saveLatestVisualTranslationFrame(bytes, "latest_photo_translation_${tag}.jpg")
+            Log.d(TAG, "Photo translation $tag: ${visualTranslationFrameMeta(bytes)}")
+            val raw = try {
+                service.analyzeImage(bytes, prompt)
+            } catch (e: Exception) {
+                Log.w(TAG, "Photo translation $tag failed: ${e.message}")
+                continue
+            }
+            val cleaned = cleanMarkdown(raw).trim()
+            Log.d(TAG, "Photo translation $tag result: ${cleaned.take(160)}")
+            lastResult = cleaned.ifBlank { lastResult }
+            if (cleaned.isNotBlank() && !isNoTranslatableTextResponse(cleaned)) {
+                return cleaned
+            }
+        }
+        return lastResult
+    }
+
+    private fun isNoTranslatableTextResponse(text: String): Boolean {
+        val normalized = text.lowercase().trim().trimEnd('.', '!', '?').trim()
+        return normalized.startsWith("no translatable text") ||
+            normalized.startsWith("no readable matching text") ||
+            normalized.startsWith("no readable text") ||
+            normalized.startsWith("no text visible")
+    }
+
+    private fun upscaleJpeg(jpegData: ByteArray, scaleFactor: Float): ByteArray {
+        if (scaleFactor <= 1.0f) return jpegData
+        return try {
+            val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size) ?: return jpegData
+            val targetWidth = (bitmap.width * scaleFactor).toInt().coerceAtLeast(1)
+            val targetHeight = (bitmap.height * scaleFactor).toInt().coerceAtLeast(1)
+            val scaled = android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+            ByteArrayOutputStream().use { output ->
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output)
+                if (scaled != bitmap) bitmap.recycle()
+                scaled.recycle()
+                output.toByteArray()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to upscale JPEG", e)
+            jpegData
+        }
+    }
+
+    private fun centerZoomAndUpscale(jpegData: ByteArray, cropRatio: Float, targetWidth: Int): ByteArray {
+        return try {
+            val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size) ?: return jpegData
+            val cropWidth = (bitmap.width * cropRatio).toInt().coerceIn(1, bitmap.width)
+            val cropHeight = (bitmap.height * cropRatio).toInt().coerceIn(1, bitmap.height)
+            val left = ((bitmap.width - cropWidth) / 2).coerceAtLeast(0)
+            val top = ((bitmap.height - cropHeight) / 2).coerceAtLeast(0)
+            val cropped = android.graphics.Bitmap.createBitmap(bitmap, left, top, cropWidth, cropHeight)
+            val scale = targetWidth.toFloat() / cropWidth.toFloat()
+            val scaledHeight = (cropHeight * scale).toInt().coerceAtLeast(1)
+            val scaled = android.graphics.Bitmap.createScaledBitmap(cropped, targetWidth, scaledHeight, true)
+            ByteArrayOutputStream().use { output ->
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output)
+                if (cropped != bitmap) bitmap.recycle()
+                if (scaled != cropped) cropped.recycle()
+                scaled.recycle()
+                output.toByteArray()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to crop+upscale JPEG", e)
+            jpegData
+        }
     }
 
     private fun prepareVisualTranslationImage(frameData: ByteArray): ByteArray {
@@ -1234,21 +1310,20 @@ class PhoneAIService : Service() {
             android.graphics.Bitmap.createScaledBitmap(bitmap, sampleWidth, sampleHeight, true)
         }
 
+        val pixelBuffer = IntArray(sampleWidth * sampleHeight)
+        sampleBitmap.getPixels(pixelBuffer, 0, sampleWidth, 0, 0, sampleWidth, sampleHeight)
+
         val brightMask = BooleanArray(sampleWidth * sampleHeight)
-        var y = 0
-        while (y < sampleHeight) {
-            var x = 0
-            while (x < sampleWidth) {
-                val pixel = sampleBitmap.getPixel(x, y)
-                val red = android.graphics.Color.red(pixel)
-                val green = android.graphics.Color.green(pixel)
-                val blue = android.graphics.Color.blue(pixel)
-                val luminance = (red * 0.299f + green * 0.587f + blue * 0.114f)
-                val channelSpread = maxOf(red, green, blue) - minOf(red, green, blue)
-                brightMask[y * sampleWidth + x] = luminance > 145f && channelSpread < 90
-                x++
-            }
-            y++
+        var i = 0
+        while (i < pixelBuffer.size) {
+            val pixel = pixelBuffer[i]
+            val red = (pixel shr 16) and 0xFF
+            val green = (pixel shr 8) and 0xFF
+            val blue = pixel and 0xFF
+            val luminance = red * 0.299f + green * 0.587f + blue * 0.114f
+            val channelSpread = maxOf(red, green, blue) - minOf(red, green, blue)
+            brightMask[i] = luminance > 145f && channelSpread < 90
+            i++
         }
 
         val visited = BooleanArray(brightMask.size)
@@ -1261,7 +1336,7 @@ class PhoneAIService : Service() {
         var bestMaxY = -1
         var bestPixels = 0
 
-        y = 0
+        var y = 0
         while (y < sampleHeight) {
             var x = 0
             while (x < sampleWidth) {
@@ -1454,19 +1529,31 @@ class PhoneAIService : Service() {
             android.graphics.Bitmap.createScaledBitmap(bitmap, sampleWidth, sampleHeight, true)
         }
 
+        val pixelBuffer = IntArray(sampleWidth * sampleHeight)
+        sampleBitmap.getPixels(pixelBuffer, 0, sampleWidth, 0, 0, sampleWidth, sampleHeight)
+        val isDarkPixel = BooleanArray(pixelBuffer.size)
+        val isBrightPixel = BooleanArray(pixelBuffer.size)
+        var p = 0
+        while (p < pixelBuffer.size) {
+            val luminance = pixelLuminance(pixelBuffer[p])
+            isDarkPixel[p] = luminance < 145f
+            isBrightPixel[p] = luminance > 170f
+            p++
+        }
+
         val darkMask = BooleanArray(sampleWidth * sampleHeight)
         val neighborhoodRadius = (sampleWidth / 160).coerceAtLeast(3)
+        val minYBound = sampleHeight * 0.05f
+        val maxYBound = sampleHeight * 0.95f
         var y = 0
         while (y < sampleHeight) {
             var x = 0
+            val rowStart = y * sampleWidth
+            val inYBounds = y > minYBound && y < maxYBound
             while (x < sampleWidth) {
-                val pixel = sampleBitmap.getPixel(x, y)
-                val luminance = pixelLuminance(pixel)
-                darkMask[y * sampleWidth + x] =
-                    luminance < 145f &&
-                        y > sampleHeight * 0.05f &&
-                        y < sampleHeight * 0.95f &&
-                        hasBrightNeighbor(sampleBitmap, x, y, neighborhoodRadius)
+                val idx = rowStart + x
+                darkMask[idx] = isDarkPixel[idx] && inYBounds &&
+                    hasBrightNeighbor(isBrightPixel, sampleWidth, sampleHeight, x, y, neighborhoodRadius)
                 x++
             }
             y++
@@ -1627,22 +1714,22 @@ class PhoneAIService : Service() {
     }
 
     private fun hasBrightNeighbor(
-        bitmap: android.graphics.Bitmap,
+        isBrightPixel: BooleanArray,
+        width: Int,
+        height: Int,
         x: Int,
         y: Int,
         radius: Int
     ): Boolean {
-        val width = bitmap.width
-        val height = bitmap.height
         val left = (x - radius).coerceAtLeast(0)
         val right = (x + radius).coerceAtMost(width - 1)
         val top = (y - radius).coerceAtLeast(0)
         val bottom = (y + radius).coerceAtMost(height - 1)
-        return pixelLuminance(bitmap.getPixel(left, top)) > 170f ||
-            pixelLuminance(bitmap.getPixel(right, top)) > 170f ||
-            pixelLuminance(bitmap.getPixel(left, bottom)) > 170f ||
-            pixelLuminance(bitmap.getPixel(right, bottom)) > 170f ||
-            pixelLuminance(bitmap.getPixel(x, y)) > 170f
+        return isBrightPixel[top * width + left] ||
+            isBrightPixel[top * width + right] ||
+            isBrightPixel[bottom * width + left] ||
+            isBrightPixel[bottom * width + right] ||
+            isBrightPixel[y * width + x]
     }
 
     private fun enhanceReadableTextSurface(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
@@ -1738,6 +1825,25 @@ class PhoneAIService : Service() {
         }
     }
 
+    private fun saveVisualTranslationDebugFrame(
+        frameData: ByteArray,
+        latestFileName: String,
+        uniquePrefix: String
+    ): String? {
+        return try {
+            val frameDir = java.io.File(filesDir, "live_visual_frames").apply { mkdirs() }
+            java.io.File(frameDir, latestFileName).writeBytes(frameData)
+
+            val uniqueFileName = "${uniquePrefix}_${System.currentTimeMillis()}.jpg"
+            java.io.File(frameDir, uniqueFileName).apply {
+                writeBytes(frameData)
+            }.absolutePath
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save visual translation debug frame", e)
+            null
+        }
+    }
+
     private fun visualTranslationFrameMeta(frameData: ByteArray): String {
         val dimensions = try {
             val options = BitmapFactory.Options().apply {
@@ -1764,23 +1870,23 @@ class PhoneAIService : Service() {
             "No ${VisualTranslationLanguages.displayName(sourceLanguageCode)} text visible."
         }
 
-        return "This is a live camera frame from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
-            "Read $sourceText on that surface and translate it into natural English, even if the text is small, tilted, bright, or surrounded by dark background. " +
-            "The image may include both a full view and an enlarged crop of the densest text cluster on the same surface; prioritize the crop when it is clearer and do not translate duplicate text twice. " +
-            "Return only the English translation for the glasses display. " +
-            "If there are multiple signs or lines, keep the same order and use short line breaks. " +
-            "If some matching text is readable, translate the clear parts instead of saying there is no text. " +
-            "Only if no matching text is truly readable, say: $noTextMessage"
+        return "This is a live camera frame from smart glasses worn by an English speaker. " +
+            "Ignore the wearer's own English monitor, phone, UI chrome, and notes unless they contain $sourceText. " +
+            "Scan the whole frame for $sourceText on signs, labels, menus, packages, books, screens, pages, or any other surface. " +
+            "Translate only the matching non-English text into natural English for the glasses display. " +
+            "If the image includes both a full view and an enlarged crop of the same surface, use whichever view is clearer and do not translate duplicate text twice. " +
+            "If there are multiple signs or lines, keep the same order with short line breaks. " +
+            "If some matching text is readable, translate the clear parts and skip only the unreadable parts. " +
+            "Only if no matching non-English text is truly readable anywhere in the frame, say exactly: $noTextMessage"
     }
 
     private fun buildPhotoTranslationPrompt(): String {
-        return "This is a photo from smart glasses. First identify the main readable surface, such as a computer monitor, sign, page, label, menu, or screen. " +
-            "Focus on the readable text inside that object even if it is small, tilted, bright, or surrounded by dark background. " +
-            "The image may include both a full view and an enlarged crop of the densest text cluster on the same surface; prioritize the crop when it is clearer and do not translate duplicate text twice. " +
-            "Read any visible non-English text, especially Japanese, Spanish, Chinese, Korean, German, or French, and translate it into natural English. " +
-            "Return only the English translation for the glasses display. Preserve the order of lines with short line breaks. " +
-            "If there is readable text but only part of it is clear, translate the clear parts and do not say there is no text. " +
-            "Only if there is truly no readable text anywhere in the photo, say: No translatable text visible."
+        return "This is a photo from smart glasses worn by an English speaker. " +
+            "The frame likely also contains the wearer's own computer monitor, phone screen, or notes in English — ignore all of that. " +
+            "Scan the entire image for any non-English text (Japanese, Chinese, Korean, Spanish, German, French, Arabic, Russian, etc.) on signs, labels, menus, packages, books, foreign-language screens, or any other surface. " +
+            "Translate only that non-English text into natural English. Return only the English translation for the glasses display, one line per source line, preserving the original order. " +
+            "If part of the non-English text is clear and part is blurry, translate the clear parts and skip the unclear ones — do not refuse the whole image just because some text is unreadable. " +
+            "Only if you genuinely cannot find any non-English text anywhere in the frame, respond with exactly: No translatable text visible."
     }
     
     /**
@@ -2628,9 +2734,16 @@ class PhoneAIService : Service() {
      * Ensure selected model is compatible with AI provider
      */
     private fun validateAndCorrectSettings(settings: ApiSettings): ApiSettings {
-        // Migrate deprecated model IDs to their replacements
+        // Migrate deprecated/unreleased model IDs to currently-callable replacements.
+        // Gemini 3.x ids are forward-looking placeholders; the v1beta endpoint still 404s
+        // them as of 2026-05, so route saved settings to the stable 2.5 family until they ship.
         val deprecatedModelMigrations = mapOf(
-            "sonar-reasoning" to "sonar-reasoning-pro"
+            "sonar-reasoning" to "sonar-reasoning-pro",
+            "gemini-3.1-flash" to "gemini-2.5-flash",
+            "gemini-3.1-flash-lite" to "gemini-2.5-flash-lite",
+            "gemini-3.1-pro-deep-think" to "gemini-2.5-pro",
+            "gemini-3.1-pro-preview" to "gemini-2.5-pro",
+            "gemini-3-flash-preview" to "gemini-2.5-flash"
         )
         val migratedSettings = deprecatedModelMigrations[settings.aiModelId]?.let { replacement ->
             Log.w(TAG, "Model '${settings.aiModelId}' is deprecated, migrating to '$replacement'")
@@ -2696,6 +2809,10 @@ class PhoneAIService : Service() {
     }
 
     private fun speakOnGlasses(text: String) {
+        if (text.trimStart().startsWith("Sorry,", ignoreCase = true)) {
+            Log.d(TAG, "Skipping TTS for error response: ${text.take(80)}")
+            return
+        }
         ttsService?.speak(text) { audioData ->
             serviceScope.launch {
                 val sent = bluetoothManager?.sendMessage(Message.aiResponseTts(audioData)) == true
@@ -2745,6 +2862,49 @@ class TextToSpeechService(private val context: android.content.Context) {
     // (Sonar `kotlin:S6311` — avoid hardcoded dispatchers in suspend bodies).
     private val mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Main
 
+    private data class SystemTtsPending(
+        val tempFile: java.io.File,
+        val onAudioChunk: (ByteArray) -> Unit
+    )
+
+    private val pendingSystemTtsUtterances =
+        java.util.concurrent.ConcurrentHashMap<String, SystemTtsPending>()
+
+    private val systemTtsListener = object : android.speech.tts.UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) { /* no-op */ }
+
+        override fun onDone(utteranceId: String?) {
+            val pending = utteranceId?.let { pendingSystemTtsUtterances.remove(it) } ?: return
+            ttsScope.launch {
+                try {
+                    val bytes = pending.tempFile.readBytes()
+                    if (bytes.isNotEmpty()) {
+                        pending.onAudioChunk(bytes)
+                    } else {
+                        android.util.Log.w(TAG, "System TTS produced empty audio file")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e(TAG, "Failed to read System TTS output", e)
+                } finally {
+                    pending.tempFile.delete()
+                }
+            }
+        }
+
+        @Deprecated("Required override; modern path uses onError(String?, Int).")
+        override fun onError(utteranceId: String?) {
+            val pending = utteranceId?.let { pendingSystemTtsUtterances.remove(it) } ?: return
+            android.util.Log.e(TAG, "System TTS synthesis error (legacy callback)")
+            pending.tempFile.delete()
+        }
+
+        override fun onError(utteranceId: String?, errorCode: Int) {
+            val pending = utteranceId?.let { pendingSystemTtsUtterances.remove(it) } ?: return
+            android.util.Log.e(TAG, "System TTS synthesis error: $errorCode")
+            pending.tempFile.delete()
+        }
+    }
+
     init {
         // Always initialise system TTS so it's available as fallback / if user picks SYSTEM_TTS
         tts = android.speech.tts.TextToSpeech(context) { status ->
@@ -2753,6 +2913,7 @@ class TextToSpeechService(private val context: android.content.Context) {
                 val langResult = tts?.setLanguage(defaultLocale)
                 systemTtsReady = langResult != android.speech.tts.TextToSpeech.LANG_MISSING_DATA
                         && langResult != android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED
+                tts?.setOnUtteranceProgressListener(systemTtsListener)
             } else {
                 android.util.Log.e(TAG, "System TTS initialisation failed (status=$status)")
             }
@@ -2767,8 +2928,8 @@ class TextToSpeechService(private val context: android.content.Context) {
 
         when (settings.ttsProvider) {
             com.example.rokidphone.data.TtsProvider.EDGE_TTS -> speakWithEdge(text, settings, onAudioChunk)
-            com.example.rokidphone.data.TtsProvider.SYSTEM_TTS -> speakWithSystemTts(text, settings)
-            com.example.rokidphone.data.TtsProvider.GOOGLE_TRANSLATE_TTS -> speakWithSystemTts(text, settings)
+            com.example.rokidphone.data.TtsProvider.SYSTEM_TTS -> speakWithSystemTts(text, settings, onAudioChunk)
+            com.example.rokidphone.data.TtsProvider.GOOGLE_TRANSLATE_TTS -> speakWithSystemTts(text, settings, onAudioChunk)
         }
     }
 
@@ -2809,47 +2970,52 @@ class TextToSpeechService(private val context: android.content.Context) {
                         onAudioChunk(audioData)
                     } else {
                         android.util.Log.w(TAG, "Edge TTS returned empty data, falling back to system TTS")
-                        withContext(mainDispatcher) { speakWithSystemTts(text, settings) }
+                        withContext(mainDispatcher) { speakWithSystemTts(text, settings, onAudioChunk) }
                     }
                 }
 
                 result.onFailure { err ->
                     android.util.Log.w(TAG, "Edge TTS failed: ${err.message}, falling back to system TTS")
-                    withContext(mainDispatcher) { speakWithSystemTts(text, settings) }
+                    withContext(mainDispatcher) { speakWithSystemTts(text, settings, onAudioChunk) }
                 }
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Edge TTS error", e)
-                withContext(mainDispatcher) { speakWithSystemTts(text, null) }
+                withContext(mainDispatcher) { speakWithSystemTts(text, null, onAudioChunk) }
             }
         }
     }
 
     // ── System TTS ───────────────────────────────────────
 
-    private fun speakWithSystemTts(text: String, settings: com.example.rokidphone.data.ApiSettings?) {
+    private fun speakWithSystemTts(
+        text: String,
+        settings: com.example.rokidphone.data.ApiSettings?,
+        onAudioChunk: (ByteArray) -> Unit
+    ) {
         android.util.Log.d(TAG, "TTS engine: System")
-        if (!systemTtsReady || tts == null) {
+        val engine = tts
+        if (!systemTtsReady || engine == null) {
             android.util.Log.e(TAG, "System TTS not ready")
             return
         }
 
         val locale = detectLocaleForText(text)
-        val langResult = tts?.setLanguage(locale)
+        val langResult = engine.setLanguage(locale)
         if (langResult == android.speech.tts.TextToSpeech.LANG_MISSING_DATA ||
             langResult == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) {
             android.util.Log.w(TAG, "System TTS: locale '$locale' not supported, using device default")
-            tts?.setLanguage(java.util.Locale.getDefault())
+            engine.setLanguage(java.util.Locale.getDefault())
         } else {
             // Prefer an offline native voice, but fall back to network voices instead
             // of discarding them (Samsung's Korean voice is often network-only, and
             // dropping it forces the engine to fall back to its Chinese default).
-            val nativeVoice = tts?.voices
+            val nativeVoice = engine.voices
                 ?.asSequence()
                 ?.filter { it.locale.language == locale.language }
                 ?.sortedBy { if (it.isNetworkConnectionRequired) 1 else 0 }
                 ?.firstOrNull()
             if (nativeVoice != null) {
-                tts?.voice = nativeVoice
+                engine.voice = nativeVoice
                 android.util.Log.d(
                     TAG,
                     "System TTS: voice=${nativeVoice.name}, network=${nativeVoice.isNetworkConnectionRequired}"
@@ -2857,10 +3023,26 @@ class TextToSpeechService(private val context: android.content.Context) {
             }
         }
 
-        tts?.setSpeechRate(settings?.systemTtsSpeechRate ?: 1.0f)
-        tts?.setPitch(settings?.systemTtsPitch ?: 1.0f)
+        engine.setSpeechRate(settings?.systemTtsSpeechRate ?: 1.0f)
+        engine.setPitch(settings?.systemTtsPitch ?: 1.0f)
         val cleaned = sanitizeForTts(text, locale)
-        tts?.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
+
+        // Synthesize to a file so the bytes can be forwarded to the glasses over SPP
+        // instead of being played on the phone's local speaker.
+        val utteranceId = "system_tts_${System.currentTimeMillis()}_${System.nanoTime()}"
+        val tempFile = try {
+            java.io.File.createTempFile("system_tts_", ".wav", context.cacheDir)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to create System TTS temp file", e)
+            return
+        }
+        pendingSystemTtsUtterances[utteranceId] = SystemTtsPending(tempFile, onAudioChunk)
+        val result = engine.synthesizeToFile(cleaned, null, tempFile, utteranceId)
+        if (result != android.speech.tts.TextToSpeech.SUCCESS) {
+            android.util.Log.w(TAG, "System TTS synthesizeToFile rejected request (code=$result)")
+            pendingSystemTtsUtterances.remove(utteranceId)
+            tempFile.delete()
+        }
     }
 
     // ── Lifecycle ────────────────────────────────────────
@@ -2870,6 +3052,8 @@ class TextToSpeechService(private val context: android.content.Context) {
         tts?.stop()
         tts?.shutdown()
         tts = null
+        pendingSystemTtsUtterances.values.forEach { it.tempFile.delete() }
+        pendingSystemTtsUtterances.clear()
     }
 
     private fun detectLocaleForText(text: String): java.util.Locale {

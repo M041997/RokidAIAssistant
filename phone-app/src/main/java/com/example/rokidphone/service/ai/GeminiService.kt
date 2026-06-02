@@ -394,7 +394,9 @@ Rules:
                 }
             }
             
-            result ?: apiErrorMessage?.let { "Gemini API error: $it" } ?: "Sorry, unable to analyze this image."
+            result ?: apiErrorMessage?.let {
+                "Sorry, unable to analyze this image. Gemini API error: $it"
+            } ?: "Sorry, unable to analyze this image."
         }
     }
     

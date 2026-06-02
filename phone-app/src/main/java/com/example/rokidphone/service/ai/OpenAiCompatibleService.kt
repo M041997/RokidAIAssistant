@@ -6,10 +6,12 @@ import com.example.rokidphone.service.SpeechResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 /**
  * OpenAI-Compatible Service Implementation
@@ -40,6 +42,8 @@ open class OpenAiCompatibleService(
     
     companion object {
         private const val TAG = "OpenAiCompatibleService"
+        private const val CONNECTION_TEST_CONNECT_TIMEOUT_SECONDS = 5L
+        private const val CONNECTION_TEST_READ_TIMEOUT_SECONDS = 15L
 
         /**
          * Grok 4 is a pure reasoning model that rejects
@@ -50,6 +54,14 @@ open class OpenAiCompatibleService(
     }
     
     override val provider = providerType
+
+    private val connectionTestClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .connectTimeout(CONNECTION_TEST_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(CONNECTION_TEST_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(CONNECTION_TEST_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+    }
     
     /**
      * Build the full endpoint URL
@@ -168,7 +180,7 @@ open class OpenAiCompatibleService(
                     requestBuilder.addHeader(authHeader.first, authHeader.second)
                 }
                 
-                client.newCall(requestBuilder.build()).execute().use { response ->
+                connectionTestClient.newCall(requestBuilder.build()).execute().use { response ->
                     val responseBody = response.body?.string()
                     
                     if (response.isSuccessful && responseBody != null) {
@@ -467,7 +479,7 @@ open class OpenAiCompatibleService(
                         Result.failure(Exception("Authentication failed. Please check your API key."))
                     } else if (response.code == 404) {
                         // Some providers don't have /models endpoint, try a simple chat
-                        testWithSimpleChat()
+                        testWithSimpleChat(connectionTestClient)
                     } else {
                         Result.failure(Exception("Connection failed: ${response.code} ${response.message}"))
                     }
@@ -479,7 +491,7 @@ open class OpenAiCompatibleService(
         }
     }
     
-    private suspend fun testWithSimpleChat(): Result<String> {
+    private suspend fun testWithSimpleChat(testClient: OkHttpClient): Result<String> {
         return withContext(Dispatchers.IO) {
             try {
                 val messages = JSONArray().apply {
@@ -507,7 +519,7 @@ open class OpenAiCompatibleService(
                     requestBuilder.addHeader(authHeader.first, authHeader.second)
                 }
                 
-                client.newCall(requestBuilder.build()).execute().use { response ->
+                testClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (response.isSuccessful) {
                         Result.success("Connected successfully!")
                     } else {

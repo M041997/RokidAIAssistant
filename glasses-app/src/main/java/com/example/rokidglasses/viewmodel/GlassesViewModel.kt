@@ -93,13 +93,22 @@ class GlassesViewModel(
         private const val VIDEO_FRAME_TARGET_WIDTH = 640
         private const val VIDEO_FRAME_TARGET_HEIGHT = 480
         private const val VIDEO_FRAME_QUALITY = 50
-        private const val VISUAL_TRANSLATION_FRAME_TARGET_WIDTH = 960
-        private const val VISUAL_TRANSLATION_FRAME_TARGET_HEIGHT = 720
-        private const val VISUAL_TRANSLATION_FRAME_QUALITY = 75
-        private const val PHOTO_TRANSLATION_TARGET_WIDTH = 1280
-        private const val PHOTO_TRANSLATION_TARGET_HEIGHT = 720
-        private const val PHOTO_TRANSLATION_QUALITY = 85
-        private const val PHOTO_TRANSLATION_MAX_SIZE_BYTES = 400 * 1024
+        // Live visual translation needs enough glyph detail for OCR too. This is larger
+        // than Gemini Live frames, but still bounded so one frame can usually cross SPP
+        // within the phone-side 3s analysis interval.
+        private const val VISUAL_TRANSLATION_FRAME_TARGET_WIDTH = 1280
+        private const val VISUAL_TRANSLATION_FRAME_TARGET_HEIGHT = 960
+        private const val VISUAL_TRANSLATION_FRAME_QUALITY = 82
+        private const val VISUAL_TRANSLATION_FRAME_MAX_SIZE_BYTES = 220 * 1024
+        // Photo translation needs enough glyph detail for CJK OCR. 1280x720 + Q85 was
+        // putting Japanese kanji on ~5-7 vertical pixels, well below the legibility floor
+        // for VLM OCR (~12-16px/char). 1920x1080 + Q92 doubles the effective DPI on text
+        // and roughly doubles the BT transfer time — acceptable tradeoff for a one-shot
+        // translation capture.
+        private const val PHOTO_TRANSLATION_TARGET_WIDTH = 1600
+        private const val PHOTO_TRANSLATION_TARGET_HEIGHT = 900
+        private const val PHOTO_TRANSLATION_QUALITY = 88
+        private const val PHOTO_TRANSLATION_MAX_SIZE_BYTES = 420 * 1024
         private const val PREFS_NAME = "glasses_connection"
         private const val KEY_PREFERRED_PHONE_ADDRESS = "preferred_phone_address"
         private const val KEY_PREFERRED_PHONE_NAME = "preferred_phone_name"
@@ -1211,6 +1220,12 @@ class GlassesViewModel(
         videoStreamingJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive && (isLiveModeActive || isVisualTranslationActive)) {
                 try {
+                    if (bluetoothClient.connectionState.value != BluetoothClientState.CONNECTED) {
+                        Log.w(TAG, "Skipping video frame capture: Bluetooth not connected")
+                        delay(1_000)
+                        continue
+                    }
+
                     // Capture one camera frame
                     val rawImageData = cameraCaptureMutex.withLock {
                         cameraManager?.capturePhoto()
@@ -1236,6 +1251,11 @@ class GlassesViewModel(
                                     VISUAL_TRANSLATION_FRAME_QUALITY
                                 } else {
                                     VIDEO_FRAME_QUALITY
+                                },
+                                maxSize = if (shouldZoomFrame) {
+                                    VISUAL_TRANSLATION_FRAME_MAX_SIZE_BYTES
+                                } else {
+                                    com.example.rokidcommon.protocol.photo.PhotoTransferConstants.MAX_COMPRESSED_SIZE
                                 },
                                 centerCropToTargetAspect = shouldZoomFrame,
                                 zoomFactor = if (shouldZoomFrame) visualTranslationFrameZoom else 1.0f,

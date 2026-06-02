@@ -118,19 +118,24 @@ class BluetoothSppClient(
             return
         }
         
+        if (connectJob?.isActive == true) {
+            Log.w(TAG, "Connection attempt already active")
+            return
+        }
+
         if (_connectionState.value == BluetoothClientState.CONNECTING ||
             _connectionState.value == BluetoothClientState.CONNECTED) {
             Log.w(TAG, "Already connecting or connected")
             return
         }
         
+        _connectionState.value = BluetoothClientState.CONNECTING
         connectJob?.cancel()
         connectJob = scope.launch(Dispatchers.IO) {
             var lastException: Exception? = null
             
             for (attempt in 1..maxRetries) {
                 try {
-                    _connectionState.value = BluetoothClientState.CONNECTING
                     Log.d(TAG, "Connecting to ${getSafeDeviceName(device)}... (attempt $attempt/$maxRetries)")
                     
                     // Cancel device discovery to speed up connection

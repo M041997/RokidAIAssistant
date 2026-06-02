@@ -31,8 +31,8 @@ class BluetoothPhotoReceiver(
     companion object {
         private const val TAG = "BluetoothPhotoReceiver"
         
-        // Timeout for receiving all chunks (30 seconds)
-        private const val TRANSFER_TIMEOUT_MS = 30_000L
+        // Keep this aligned with the shared protocol sender budget.
+        private const val TRANSFER_TIMEOUT_MS = PhotoTransferConstants.TRANSFER_TIMEOUT_MS
         
         // Timeout for individual chunk (5 seconds)
         private const val CHUNK_TIMEOUT_MS = 5_000L
